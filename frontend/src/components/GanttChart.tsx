@@ -84,49 +84,80 @@ export default function GanttChart({ project, projectId, items, members, onRefre
     return m ? m.name : id;
   };
 
-  // Group items under phases by due_date falling within phase date range
-  const itemsByPhase = useMemo(() => {
-    const map: Record<string, ExtractedItemRow[]> = {};
-    const unmatched: ExtractedItemRow[] = [];
-    const sortedPhases = [...project.phases].sort((a, b) => a.sort_order - b.sort_order);
+  // Build nested structure: Phase > Milestone > Items (decisions first, then TODOs)
+  const nestedData = useMemo(() => {
+    const phasesArr = [...project.phases].sort((a, b) => a.sort_order - b.sort_order);
 
-    for (const item of confirmedItems) {
-      if (!item.due_date) {
-        unmatched.push(item);
-        continue;
+    // Group milestones by phase
+    const msByPhase: Record<string, typeof project.milestones> = {};
+    const unmatchedMs: typeof project.milestones = [];
+    for (const ms of project.milestones) {
+      if (ms.phase_id) {
+        if (!msByPhase[ms.phase_id]) msByPhase[ms.phase_id] = [];
+        msByPhase[ms.phase_id].push(ms);
+      } else {
+        unmatchedMs.push(ms);
       }
+    }
+
+    // Group items into phases by due_date range
+    const itemsByPhase: Record<string, ExtractedItemRow[]> = {};
+    const unmatchedItems: ExtractedItemRow[] = [];
+    for (const item of confirmedItems) {
+      if (!item.due_date) { unmatchedItems.push(item); continue; }
       const itemDate = parseDate(item.due_date);
       let matched = false;
-      for (const phase of sortedPhases) {
+      for (const phase of phasesArr) {
         if (!phase.start_date || !phase.end_date) continue;
-        const start = parseDate(phase.start_date);
-        const end = parseDate(phase.end_date);
-        if (itemDate >= start && itemDate <= end) {
-          if (!map[phase.id]) map[phase.id] = [];
-          map[phase.id].push(item);
+        if (itemDate >= parseDate(phase.start_date) && itemDate <= parseDate(phase.end_date)) {
+          if (!itemsByPhase[phase.id]) itemsByPhase[phase.id] = [];
+          itemsByPhase[phase.id].push(item);
           matched = true;
           break;
         }
       }
-      if (!matched) unmatched.push(item);
+      if (!matched) unmatchedItems.push(item);
     }
-    return { map, unmatched };
-  }, [confirmedItems, project.phases]);
 
-  // Group milestones under phases
-  const milestonesByPhase = useMemo(() => {
-    const map: Record<string, typeof project.milestones> = {};
-    const unmatched: typeof project.milestones = [];
-    for (const ms of project.milestones) {
-      if (ms.phase_id) {
-        if (!map[ms.phase_id]) map[ms.phase_id] = [];
-        map[ms.phase_id].push(ms);
-      } else {
-        unmatched.push(ms);
+    // Within each phase, assign items to nearest milestone by due_date
+    function assignItemsToMilestones(
+      milestones: typeof project.milestones,
+      phaseItems: ExtractedItemRow[]
+    ): { msItems: Record<string, ExtractedItemRow[]>; orphanItems: ExtractedItemRow[] } {
+      const msItems: Record<string, ExtractedItemRow[]> = {};
+      const orphanItems: ExtractedItemRow[] = [];
+      const msWithDates = milestones.filter((m) => m.due_date).sort((a, b) => (a.due_date! > b.due_date! ? 1 : -1));
+
+      if (msWithDates.length === 0) return { msItems, orphanItems: phaseItems };
+
+      for (const item of phaseItems) {
+        if (!item.due_date) { orphanItems.push(item); continue; }
+        // Find nearest milestone by due_date
+        let bestMs = msWithDates[0];
+        let bestDist = Math.abs(parseDate(item.due_date).getTime() - parseDate(bestMs.due_date!).getTime());
+        for (let i = 1; i < msWithDates.length; i++) {
+          const dist = Math.abs(parseDate(item.due_date).getTime() - parseDate(msWithDates[i].due_date!).getTime());
+          if (dist < bestDist) { bestDist = dist; bestMs = msWithDates[i]; }
+        }
+        if (!msItems[bestMs.id]) msItems[bestMs.id] = [];
+        msItems[bestMs.id].push(item);
       }
+      return { msItems, orphanItems };
     }
-    return { map, unmatched };
-  }, [project.milestones]);
+
+    // Build per-phase data
+    const phases = phasesArr.map((phase) => {
+      const milestones = msByPhase[phase.id] || [];
+      const phaseItems = itemsByPhase[phase.id] || [];
+      const { msItems, orphanItems } = assignItemsToMilestones(milestones, phaseItems);
+      return { phase, milestones, msItems, orphanItems };
+    });
+
+    // Unmatched section
+    const { msItems: unmatchedMsItems, orphanItems: globalOrphanItems } = assignItemsToMilestones(unmatchedMs, unmatchedItems);
+
+    return { phases, unmatchedMs, unmatchedMsItems, globalOrphanItems };
+  }, [confirmedItems, project.phases, project.milestones]);
 
   const { rangeStart, totalDays, months } = useMemo(() => {
     const allDates: Date[] = [];
@@ -241,15 +272,15 @@ export default function GanttChart({ project, projectId, items, members, onRefre
     } catch { alert("マイルストーンの追加に失敗しました"); }
   };
 
-  // Render items list (TODOs first, then decisions)
-  const renderItems = (phaseItems: ExtractedItemRow[]) => {
-    const todos = phaseItems.filter((i) => i.type === "todo");
-    const decisions = phaseItems.filter((i) => i.type === "decision");
-    const ordered = [...todos, ...decisions];
+  // Render items list (decisions first, then TODOs)
+  const renderItems = (itemList: ExtractedItemRow[]) => {
+    const decisions = itemList.filter((i) => i.type === "decision");
+    const todos = itemList.filter((i) => i.type === "todo");
+    const ordered = [...decisions, ...todos];
     if (ordered.length === 0) return null;
 
     return (
-      <div className="space-y-1">
+      <div className="space-y-0.5">
         {ordered.map((item) => {
           const badge = typeBadge[item.type];
           return (
@@ -265,8 +296,8 @@ export default function GanttChart({ project, projectId, items, members, onRefre
     );
   };
 
-  // Render milestone row with nested items
-  const renderMilestone = (ms: typeof project.milestones[0]) => {
+  // Render milestone row with nested items (decisions → TODOs)
+  const renderMilestone = (ms: typeof project.milestones[0], msItems: ExtractedItemRow[] = []) => {
     const isExpanded = expandedMilestones.has(ms.id);
     const color = ms.status === "achieved" ? "text-green-500" : "text-yellow-500";
     return (
@@ -331,6 +362,12 @@ export default function GanttChart({ project, projectId, items, members, onRefre
                 ))}
               </select>
             </div>
+            {/* Nested items under this milestone: decisions → TODOs */}
+            {msItems.length > 0 && (
+              <div className="ml-2 mt-1 border-l-2 border-gray-100 pl-2">
+                {renderItems(msItems)}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -450,7 +487,7 @@ export default function GanttChart({ project, projectId, items, members, onRefre
         <span className="flex items-center gap-1"><span className="border-l-2 border-dashed border-red-400 h-3 inline-block" />今日</span>
       </div>
 
-      {/* ===== Nested Tree: Phase > Milestone > TODO > Decision ===== */}
+      {/* ===== Nested Tree: Phase > Milestone > 決定事項 > TODO ===== */}
       <section>
         <div className="flex items-center justify-between mb-3">
           <h3 className="text-sm font-semibold text-gray-500">スケジュール管理</h3>
@@ -460,11 +497,9 @@ export default function GanttChart({ project, projectId, items, members, onRefre
         </div>
 
         <div className="space-y-1">
-          {sortedPhases.map((phase) => {
+          {nestedData.phases.map(({ phase, milestones, msItems, orphanItems }) => {
             const isExpanded = expandedPhases.has(phase.id);
-            const phaseMilestones = milestonesByPhase.map[phase.id] || [];
-            const phaseItems = itemsByPhase.map[phase.id] || [];
-            const childCount = phaseMilestones.length + phaseItems.length;
+            const totalItems = milestones.length + Object.values(msItems).reduce((s, arr) => s + arr.length, 0) + orphanItems.length;
 
             return (
               <div key={phase.id} className="border border-gray-200 rounded-lg overflow-hidden">
@@ -484,8 +519,8 @@ export default function GanttChart({ project, projectId, items, members, onRefre
                     </span>
                   )}
                   <span className="text-xs text-gray-400 shrink-0">{STATUS_LABELS[phase.status]}</span>
-                  {childCount > 0 && (
-                    <span className="text-xs text-gray-300 shrink-0">({childCount})</span>
+                  {totalItems > 0 && (
+                    <span className="text-xs text-gray-300 shrink-0">({totalItems})</span>
                   )}
                   <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                     <button
@@ -499,7 +534,7 @@ export default function GanttChart({ project, projectId, items, members, onRefre
                   </div>
                 </div>
 
-                {/* Expanded content */}
+                {/* Expanded: Phase edit + Milestones (with nested items) */}
                 {isExpanded && (
                   <div className="px-2 py-2 space-y-1">
                     {/* Phase inline edit */}
@@ -544,8 +579,8 @@ export default function GanttChart({ project, projectId, items, members, onRefre
                       </select>
                     </div>
 
-                    {/* Milestones under this phase */}
-                    {phaseMilestones.map((ms) => renderMilestone(ms))}
+                    {/* Milestones with nested decision/TODO items */}
+                    {milestones.map((ms) => renderMilestone(ms, msItems[ms.id] || []))}
 
                     {/* Add milestone row */}
                     {addingMsPhaseId === phase.id && (
@@ -571,15 +606,15 @@ export default function GanttChart({ project, projectId, items, members, onRefre
                       </div>
                     )}
 
-                    {/* Items (TODOs then Decisions) directly under this phase */}
-                    {phaseItems.length > 0 && (
+                    {/* Orphan items (no milestone match within this phase) */}
+                    {orphanItems.length > 0 && (
                       <div className="ml-3 mt-1">
-                        <div className="text-xs text-gray-400 px-2 py-1">関連アイテム</div>
-                        {renderItems(phaseItems)}
+                        <div className="text-xs text-gray-400 px-2 py-1">未割当アイテム</div>
+                        {renderItems(orphanItems)}
                       </div>
                     )}
 
-                    {phaseMilestones.length === 0 && phaseItems.length === 0 && addingMsPhaseId !== phase.id && (
+                    {milestones.length === 0 && orphanItems.length === 0 && addingMsPhaseId !== phase.id && (
                       <p className="text-xs text-gray-400 px-3 py-2">マイルストーンやアイテムがありません</p>
                     )}
                   </div>
@@ -619,8 +654,8 @@ export default function GanttChart({ project, projectId, items, members, onRefre
             </div>
           )}
 
-          {/* Unmatched milestones & items (no phase) */}
-          {(milestonesByPhase.unmatched.length > 0 || itemsByPhase.unmatched.length > 0) && (
+          {/* Unmatched (no phase) */}
+          {(nestedData.unmatchedMs.length > 0 || nestedData.globalOrphanItems.length > 0) && (
             <div className="border border-gray-200 rounded-lg overflow-hidden">
               <div className="flex items-center gap-2 px-3 py-2 bg-gray-50">
                 <span className="text-xs text-gray-400">&#9632;</span>
@@ -631,7 +666,7 @@ export default function GanttChart({ project, projectId, items, members, onRefre
                 >+MS</button>
               </div>
               <div className="px-2 py-2 space-y-1">
-                {milestonesByPhase.unmatched.map((ms) => renderMilestone(ms))}
+                {nestedData.unmatchedMs.map((ms) => renderMilestone(ms, nestedData.unmatchedMsItems[ms.id] || []))}
                 {addingMsPhaseId === "__none__" && (
                   <div className="flex gap-2 items-center ml-3 px-3 py-1.5 bg-corp-light rounded">
                     <span className="text-yellow-500 text-sm">&#9670;</span>
@@ -654,7 +689,12 @@ export default function GanttChart({ project, projectId, items, members, onRefre
                     <button className="text-xs text-gray-400 hover:text-gray-600" onClick={() => { setAddingMsPhaseId(null); setNewMs({ name: "", due_date: "" }); }}>取消</button>
                   </div>
                 )}
-                {itemsByPhase.unmatched.length > 0 && renderItems(itemsByPhase.unmatched)}
+                {nestedData.globalOrphanItems.length > 0 && (
+                  <div className="ml-3 mt-1">
+                    <div className="text-xs text-gray-400 px-2 py-1">未割当アイテム</div>
+                    {renderItems(nestedData.globalOrphanItems)}
+                  </div>
+                )}
               </div>
             </div>
           )}
