@@ -55,6 +55,7 @@ export default function GanttChart({ project, projectId, items, members, onRefre
   const [newMs, setNewMs] = useState({ name: "", due_date: "" });
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
   const [expandedMilestones, setExpandedMilestones] = useState<Set<string>>(new Set());
+  const [zoomLevel, setZoomLevel] = useState(1);
 
   const togglePhase = (id: string) => {
     setExpandedPhases((prev) => {
@@ -279,6 +280,9 @@ export default function GanttChart({ project, projectId, items, members, onRefre
             {ms.name}
           </button>
           {ms.due_date && <span className="text-xs text-gray-400 shrink-0">{ms.due_date}</span>}
+          <span className={`text-xs shrink-0 ${ms.status === "achieved" ? "text-green-500" : "text-yellow-500"}`}>
+            {ms.status === "achieved" ? "達成" : "未達"}
+          </span>
           <span className="text-xs text-gray-300 shrink-0">{ms.source === "ai" ? "AI" : "手動"}</span>
           <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
             <button
@@ -290,7 +294,7 @@ export default function GanttChart({ project, projectId, items, members, onRefre
         {isExpanded && (
           <div className="ml-6 mb-1">
             {/* Inline edit for milestone */}
-            <div className="flex gap-2 mb-2 items-center text-sm">
+            <div className="flex gap-2 mb-2 items-center text-sm flex-wrap">
               <label className="text-xs text-gray-400 w-12">名前:</label>
               <input
                 type="text"
@@ -306,6 +310,26 @@ export default function GanttChart({ project, projectId, items, members, onRefre
                 defaultValue={ms.due_date ?? ""}
                 onBlur={(e) => { if (e.target.value !== (ms.due_date ?? "")) handleMsUpdate(ms.id, { due_date: e.target.value || null }); }}
               />
+              <label className="text-xs text-gray-400 w-16">ステータス:</label>
+              <select
+                className="border border-transparent hover:border-gray-300 focus:border-corp rounded px-1 py-0.5 text-sm bg-transparent focus:bg-white transition-colors outline-none"
+                defaultValue={ms.status}
+                onChange={(e) => handleMsUpdate(ms.id, { status: e.target.value })}
+              >
+                <option value="pending">未達</option>
+                <option value="achieved">達成</option>
+              </select>
+              <label className="text-xs text-gray-400 w-16">フェーズ:</label>
+              <select
+                className="border border-transparent hover:border-gray-300 focus:border-corp rounded px-1 py-0.5 text-sm bg-transparent focus:bg-white transition-colors outline-none"
+                defaultValue={ms.phase_id ?? ""}
+                onChange={(e) => handleMsUpdate(ms.id, { phase_id: e.target.value || null })}
+              >
+                <option value="">未分類</option>
+                {sortedPhases.map((ph) => (
+                  <option key={ph.id} value={ph.id}>{ph.name}</option>
+                ))}
+              </select>
             </div>
           </div>
         )}
@@ -316,9 +340,27 @@ export default function GanttChart({ project, projectId, items, members, onRefre
   return (
     <div className="space-y-6">
 
-      {/* ===== Gantt Chart (read-only visualization) ===== */}
+      {/* ===== Gantt Chart ===== */}
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-xs text-gray-500">ズーム:</span>
+        <button
+          className="px-2 py-0.5 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40"
+          disabled={zoomLevel <= 0.5}
+          onClick={() => setZoomLevel((z) => Math.max(0.5, +(z - 0.25).toFixed(2)))}
+        >−</button>
+        <span className="text-xs text-gray-600 w-12 text-center">{Math.round(zoomLevel * 100)}%</span>
+        <button
+          className="px-2 py-0.5 text-sm border border-gray-300 rounded hover:bg-gray-100 disabled:opacity-40"
+          disabled={zoomLevel >= 3}
+          onClick={() => setZoomLevel((z) => Math.min(3, +(z + 0.25).toFixed(2)))}
+        >+</button>
+        <button
+          className="px-2 py-0.5 text-xs border border-gray-300 rounded hover:bg-gray-100"
+          onClick={() => setZoomLevel(1)}
+        >リセット</button>
+      </div>
       <div className="overflow-x-auto">
-        <div className="min-w-[700px]">
+        <div style={{ minWidth: `${700 * zoomLevel}px` }}>
           {/* Month header */}
           <div className="flex h-8 border-b border-gray-300">
             <div className="shrink-0" style={{ width: `${LABEL_WIDTH}px` }} />
@@ -461,7 +503,7 @@ export default function GanttChart({ project, projectId, items, members, onRefre
                 {isExpanded && (
                   <div className="px-2 py-2 space-y-1">
                     {/* Phase inline edit */}
-                    <div className="flex gap-2 items-center text-sm px-3 pb-2 border-b border-gray-100 mb-2">
+                    <div className="flex gap-2 items-center text-sm px-3 pb-2 border-b border-gray-100 mb-2 flex-wrap">
                       <label className="text-xs text-gray-400">名前:</label>
                       <input
                         type="text"
@@ -483,6 +525,13 @@ export default function GanttChart({ project, projectId, items, members, onRefre
                         className="border border-transparent hover:border-gray-300 focus:border-corp rounded px-2 py-0.5 text-sm bg-transparent focus:bg-white transition-colors outline-none"
                         defaultValue={phase.end_date}
                         onBlur={(e) => { if (e.target.value !== phase.end_date) handlePhaseUpdate(phase.id, { end_date: e.target.value || null }); }}
+                      />
+                      <label className="text-xs text-gray-400">実績終了:</label>
+                      <input
+                        type="date"
+                        className="border border-transparent hover:border-gray-300 focus:border-corp rounded px-2 py-0.5 text-sm bg-transparent focus:bg-white transition-colors outline-none"
+                        defaultValue={phase.actual_end_date ?? ""}
+                        onBlur={(e) => { if (e.target.value !== (phase.actual_end_date ?? "")) handlePhaseUpdate(phase.id, { actual_end_date: e.target.value || null }); }}
                       />
                       <select
                         className="border border-transparent hover:border-gray-300 focus:border-corp rounded px-1 py-0.5 text-sm bg-transparent focus:bg-white transition-colors outline-none"
