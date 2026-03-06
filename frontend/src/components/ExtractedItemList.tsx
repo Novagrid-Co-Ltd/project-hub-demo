@@ -12,9 +12,17 @@ import {
   type SubtaskRow,
 } from "../lib/api";
 
+interface MilestoneOption {
+  id: string;
+  name: string;
+  due_date: string | null;
+  phase_id: string | null;
+}
+
 interface Props {
   items: ExtractedItemRow[];
   members: Member[];
+  milestones: MilestoneOption[];
   projectId: string;
   onRefresh: () => void;
 }
@@ -113,7 +121,7 @@ function SubtaskList({ itemId }: { itemId: string }) {
   );
 }
 
-export default function ExtractedItemList({ items, members, onRefresh }: Props) {
+export default function ExtractedItemList({ items, members, milestones, onRefresh }: Props) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -123,6 +131,7 @@ export default function ExtractedItemList({ items, members, onRefresh }: Props) 
     assignee_member_id: string | null;
     due_date: string | null;
     priority: ExtractedItemRow["priority"];
+    milestone_id: string | null;
   } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -130,6 +139,12 @@ export default function ExtractedItemList({ items, members, onRefresh }: Props) 
     if (!id) return "-";
     const m = members.find((x) => x.id === id);
     return m ? m.name : id;
+  };
+
+  const resolveMilestone = (id: string | null): string => {
+    if (!id) return "-";
+    const ms = milestones.find((x) => x.id === id);
+    return ms ? ms.name : "-";
   };
 
   const filtered = items.filter((item) => {
@@ -145,6 +160,7 @@ export default function ExtractedItemList({ items, members, onRefresh }: Props) 
       assignee_member_id: item.assignee_member_id,
       due_date: item.due_date,
       priority: item.priority,
+      milestone_id: item.milestone_id,
     });
   };
 
@@ -290,6 +306,19 @@ export default function ExtractedItemList({ items, members, onRefresh }: Props) 
                         <option value="low">低</option>
                       </select>
                     </div>
+                    <div>
+                      <label className="text-xs text-gray-500">マイルストーン</label>
+                      <select
+                        className="border border-gray-300 rounded px-2 py-1 text-sm block"
+                        value={editDraft.milestone_id ?? ""}
+                        onChange={(e) => setEditDraft({ ...editDraft, milestone_id: e.target.value || null })}
+                      >
+                        <option value="">未割当</option>
+                        {milestones.map((ms) => (
+                          <option key={ms.id} value={ms.id}>{ms.name}{ms.due_date ? ` (${ms.due_date})` : ""}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   <div className="flex gap-2 pt-1">
                     <button
@@ -329,6 +358,7 @@ export default function ExtractedItemList({ items, members, onRefresh }: Props) 
                       <div className="flex gap-4 mt-1 text-xs text-gray-500">
                         <span>担当: {resolveName(item.assignee_member_id)}</span>
                         {item.due_date && <span>期限: {item.due_date}</span>}
+                        {item.milestone_id && <span>MS: {resolveMilestone(item.milestone_id)}</span>}
                       </div>
                       {item.ai_original?.source_quote && (
                         <div className="mt-1 text-xs text-gray-400 italic border-l-2 border-gray-200 pl-2">

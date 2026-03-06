@@ -174,6 +174,7 @@ export default function ProjectDetail() {
         <ExtractedItemList
           items={items}
           members={members}
+          milestones={projectData.milestones.map((ms) => ({ id: ms.id, name: ms.name, due_date: ms.due_date, phase_id: ms.phase_id }))}
           projectId={projectData.id}
           onRefresh={fetchData}
         />

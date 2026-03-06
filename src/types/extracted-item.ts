@@ -30,6 +30,7 @@ export interface ExtractedItemUpdateRequest {
   assignee_member_id?: string | null;
   due_date?: string | null;
   priority?: "high" | "medium" | "low";
+  milestone_id?: string | null;
 }
 
 export interface ExtractionResultItem {

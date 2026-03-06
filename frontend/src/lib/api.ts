@@ -164,6 +164,7 @@ export interface ExtractedItemRow {
   id: string;
   meeting_id: string;
   project_id: string | null;
+  milestone_id: string | null;
   type: "todo" | "decision" | "issue" | "phase_change";
   status: "draft" | "confirmed" | "rejected";
   content: string;
@@ -191,7 +192,7 @@ export async function getExtractedItems(params?: { project_id?: string; status?:
   return res.data;
 }
 
-export async function updateItem(id: string, data: { content?: string; assignee_member_id?: string | null; due_date?: string | null; priority?: string }) {
+export async function updateItem(id: string, data: { content?: string; assignee_member_id?: string | null; due_date?: string | null; priority?: string; milestone_id?: string | null }) {
   return request<{ data: ExtractedItemRow }>(`/api/extracted-items/${id}`, {
     method: "PATCH",
     body: JSON.stringify(data),

@@ -107,10 +107,22 @@ export default function GanttChart({ project, projectId, items, members, onRefre
       }
     }
 
-    // Group items into phases by due_date range
+    // Separate items with explicit milestone_id vs those needing phase-based grouping
+    const explicitMsItems: Record<string, ExtractedItemRow[]> = {};
+    const itemsToGroup: ExtractedItemRow[] = [];
+    for (const item of confirmedItems) {
+      if (item.milestone_id) {
+        if (!explicitMsItems[item.milestone_id]) explicitMsItems[item.milestone_id] = [];
+        explicitMsItems[item.milestone_id].push(item);
+      } else {
+        itemsToGroup.push(item);
+      }
+    }
+
+    // Group remaining items into phases by due_date range
     const itemsByPhase: Record<string, ExtractedItemRow[]> = {};
     const unmatchedItems: ExtractedItemRow[] = [];
-    for (const item of confirmedItems) {
+    for (const item of itemsToGroup) {
       if (!item.due_date) { unmatchedItems.push(item); continue; }
       const itemDate = parseDate(item.due_date);
       let matched = false;
@@ -126,13 +138,21 @@ export default function GanttChart({ project, projectId, items, members, onRefre
       if (!matched) unmatchedItems.push(item);
     }
 
-    // Within each phase, assign items to nearest milestone by due_date
+    // Within each phase, assign items to nearest milestone by due_date (+ merge explicit)
     function assignItemsToMilestones(
-      milestones: typeof project.milestones,
+      milestones: typeof patchedProject.milestones,
       phaseItems: ExtractedItemRow[]
     ): { msItems: Record<string, ExtractedItemRow[]>; orphanItems: ExtractedItemRow[] } {
       const msItems: Record<string, ExtractedItemRow[]> = {};
       const orphanItems: ExtractedItemRow[] = [];
+
+      // First, add explicitly assigned items
+      for (const ms of milestones) {
+        if (explicitMsItems[ms.id]) {
+          msItems[ms.id] = [...explicitMsItems[ms.id]];
+        }
+      }
+
       const msWithDates = milestones.filter((m) => m.due_date).sort((a, b) => (a.due_date! > b.due_date! ? 1 : -1));
 
       if (msWithDates.length === 0) return { msItems, orphanItems: phaseItems };
