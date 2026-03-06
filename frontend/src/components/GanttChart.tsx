@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback } from "react";
 import type { Project, Member } from "../mock/data";
 import type { ExtractedItemRow } from "../lib/api";
 import { createPhase, updatePhase, deletePhase, createMilestone, updateMilestone, deleteMilestone } from "../lib/api";
+
+type PendingPatch = Record<string, unknown>;
 
 interface Props {
   project: Project;
@@ -56,6 +58,11 @@ export default function GanttChart({ project, projectId, items, members, onRefre
   const [expandedPhases, setExpandedPhases] = useState<Set<string>>(new Set());
   const [expandedMilestones, setExpandedMilestones] = useState<Set<string>>(new Set());
   const [zoomLevel, setZoomLevel] = useState(1);
+  const [pendingPhases, setPendingPhases] = useState<Record<string, PendingPatch>>({});
+  const [pendingMilestones, setPendingMilestones] = useState<Record<string, PendingPatch>>({});
+  const [saving, setSaving] = useState(false);
+
+  const hasPendingChanges = Object.keys(pendingPhases).length > 0 || Object.keys(pendingMilestones).length > 0;
 
   const togglePhase = (id: string) => {
     setExpandedPhases((prev) => {
@@ -86,12 +93,12 @@ export default function GanttChart({ project, projectId, items, members, onRefre
 
   // Build nested structure: Phase > Milestone > Items (decisions first, then TODOs)
   const nestedData = useMemo(() => {
-    const phasesArr = [...project.phases].sort((a, b) => a.sort_order - b.sort_order);
+    const phasesArr = [...patchedProject.phases].sort((a, b) => a.sort_order - b.sort_order);
 
     // Group milestones by phase
-    const msByPhase: Record<string, typeof project.milestones> = {};
-    const unmatchedMs: typeof project.milestones = [];
-    for (const ms of project.milestones) {
+    const msByPhase: Record<string, typeof patchedProject.milestones> = {};
+    const unmatchedMs: typeof patchedProject.milestones = [];
+    for (const ms of patchedProject.milestones) {
       if (ms.phase_id) {
         if (!msByPhase[ms.phase_id]) msByPhase[ms.phase_id] = [];
         msByPhase[ms.phase_id].push(ms);
@@ -157,16 +164,16 @@ export default function GanttChart({ project, projectId, items, members, onRefre
     const { msItems: unmatchedMsItems, orphanItems: globalOrphanItems } = assignItemsToMilestones(unmatchedMs, unmatchedItems);
 
     return { phases, unmatchedMs, unmatchedMsItems, globalOrphanItems };
-  }, [confirmedItems, project.phases, project.milestones]);
+  }, [confirmedItems, patchedProject.phases, patchedProject.milestones]);
 
   const { rangeStart, totalDays, months } = useMemo(() => {
     const allDates: Date[] = [];
-    for (const ph of project.phases) {
+    for (const ph of patchedProject.phases) {
       if (ph.start_date) allDates.push(parseDate(ph.start_date));
       if (ph.end_date) allDates.push(parseDate(ph.end_date));
       if (ph.actual_end_date) allDates.push(parseDate(ph.actual_end_date));
     }
-    for (const ms of project.milestones) {
+    for (const ms of patchedProject.milestones) {
       if (ms.due_date) allDates.push(parseDate(ms.due_date));
     }
     if (allDates.length === 0) {
@@ -198,7 +205,7 @@ export default function GanttChart({ project, projectId, items, members, onRefre
     }
 
     return { rangeStart: minDate, totalDays: total, months: monthLabels };
-  }, [project, today]);
+  }, [patchedProject, today]);
 
   function toPct(dateStr: string): number {
     const d = diffDays(rangeStart, parseDate(dateStr));
@@ -216,16 +223,51 @@ export default function GanttChart({ project, projectId, items, members, onRefre
     return (d / totalDays) * 100;
   })();
 
-  const sortedPhases = [...project.phases].sort((a, b) => a.sort_order - b.sort_order);
+  const sortedPhases = [...patchedProject.phases].sort((a, b) => a.sort_order - b.sort_order);
 
-  // Handlers
-  const handlePhaseUpdate = async (phaseId: string, patch: Record<string, unknown>) => {
-    try {
-      await updatePhase(projectId, phaseId, patch);
-      onRefresh();
-    } catch { alert("フェーズの更新に失敗しました"); }
+  // --- Pending change handlers (accumulate locally, save on explicit action) ---
+  const handlePhaseUpdate = (phaseId: string, patch: Record<string, unknown>) => {
+    setPendingPhases((prev) => ({
+      ...prev,
+      [phaseId]: { ...(prev[phaseId] || {}), ...patch },
+    }));
   };
 
+  const handleMsUpdate = (msId: string, patch: Record<string, unknown>) => {
+    setPendingMilestones((prev) => ({
+      ...prev,
+      [msId]: { ...(prev[msId] || {}), ...patch },
+    }));
+  };
+
+  // Flush all pending changes to API
+  const handleSaveAll = useCallback(async () => {
+    setSaving(true);
+    try {
+      const promises: Promise<unknown>[] = [];
+      for (const [phaseId, patch] of Object.entries(pendingPhases)) {
+        promises.push(updatePhase(projectId, phaseId, patch));
+      }
+      for (const [msId, patch] of Object.entries(pendingMilestones)) {
+        promises.push(updateMilestone(projectId, msId, patch));
+      }
+      await Promise.all(promises);
+      setPendingPhases({});
+      setPendingMilestones({});
+      onRefresh();
+    } catch {
+      alert("保存に失敗しました");
+    } finally {
+      setSaving(false);
+    }
+  }, [pendingPhases, pendingMilestones, projectId, onRefresh]);
+
+  const handleDiscardChanges = () => {
+    setPendingPhases({});
+    setPendingMilestones({});
+  };
+
+  // --- Immediate actions (create/delete still apply immediately) ---
   const handlePhaseDelete = async (phaseId: string, name: string) => {
     if (!confirm(`「${name}」を削除しますか？`)) return;
     try { await deletePhase(projectId, phaseId); onRefresh(); }
@@ -247,11 +289,6 @@ export default function GanttChart({ project, projectId, items, members, onRefre
     } catch { alert("フェーズの追加に失敗しました"); }
   };
 
-  const handleMsUpdate = async (msId: string, patch: Record<string, unknown>) => {
-    try { await updateMilestone(projectId, msId, patch); onRefresh(); }
-    catch { alert("マイルストーンの更新に失敗しました"); }
-  };
-
   const handleMsDelete = async (msId: string, name: string) => {
     if (!confirm(`「${name}」を削除しますか？`)) return;
     try { await deleteMilestone(projectId, msId); onRefresh(); }
@@ -271,6 +308,19 @@ export default function GanttChart({ project, projectId, items, members, onRefre
       onRefresh();
     } catch { alert("マイルストーンの追加に失敗しました"); }
   };
+
+  // Apply pending changes to display data optimistically
+  const patchedProject = useMemo(() => {
+    const phases = project.phases.map((ph) => {
+      const patch = pendingPhases[ph.id];
+      return patch ? { ...ph, ...patch } as typeof ph : ph;
+    });
+    const milestones = project.milestones.map((ms) => {
+      const patch = pendingMilestones[ms.id];
+      return patch ? { ...ms, ...patch } as typeof ms : ms;
+    });
+    return { ...project, phases, milestones };
+  }, [project, pendingPhases, pendingMilestones]);
 
   // Render items list (decisions first, then TODOs)
   const renderItems = (itemList: ExtractedItemRow[]) => {
@@ -330,21 +380,20 @@ export default function GanttChart({ project, projectId, items, members, onRefre
               <input
                 type="text"
                 className="border border-transparent hover:border-gray-300 focus:border-corp rounded px-2 py-0.5 text-sm bg-transparent focus:bg-white transition-colors outline-none flex-1"
-                defaultValue={ms.name}
-                onBlur={(e) => { if (e.target.value !== ms.name) handleMsUpdate(ms.id, { name: e.target.value }); }}
-                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                value={ms.name}
+                onChange={(e) => handleMsUpdate(ms.id, { name: e.target.value })}
               />
               <label className="text-xs text-gray-400 w-12">期日:</label>
               <input
                 type="date"
                 className="border border-transparent hover:border-gray-300 focus:border-corp rounded px-2 py-0.5 text-sm bg-transparent focus:bg-white transition-colors outline-none"
-                defaultValue={ms.due_date ?? ""}
-                onBlur={(e) => { if (e.target.value !== (ms.due_date ?? "")) handleMsUpdate(ms.id, { due_date: e.target.value || null }); }}
+                value={ms.due_date ?? ""}
+                onChange={(e) => handleMsUpdate(ms.id, { due_date: e.target.value || null })}
               />
               <label className="text-xs text-gray-400 w-16">ステータス:</label>
               <select
                 className="border border-transparent hover:border-gray-300 focus:border-corp rounded px-1 py-0.5 text-sm bg-transparent focus:bg-white transition-colors outline-none"
-                defaultValue={ms.status}
+                value={ms.status}
                 onChange={(e) => handleMsUpdate(ms.id, { status: e.target.value })}
               >
                 <option value="pending">未達</option>
@@ -353,7 +402,7 @@ export default function GanttChart({ project, projectId, items, members, onRefre
               <label className="text-xs text-gray-400 w-16">フェーズ:</label>
               <select
                 className="border border-transparent hover:border-gray-300 focus:border-corp rounded px-1 py-0.5 text-sm bg-transparent focus:bg-white transition-colors outline-none"
-                defaultValue={ms.phase_id ?? ""}
+                value={ms.phase_id ?? ""}
                 onChange={(e) => handleMsUpdate(ms.id, { phase_id: e.target.value || null })}
               >
                 <option value="">未分類</option>
@@ -376,6 +425,27 @@ export default function GanttChart({ project, projectId, items, members, onRefre
 
   return (
     <div className="space-y-6">
+
+      {/* ===== Save bar ===== */}
+      {hasPendingChanges && (
+        <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-2 bg-yellow-50 border border-yellow-300 rounded-lg shadow-sm">
+          <span className="text-sm text-yellow-800 flex-1">未保存の変更があります</span>
+          <button
+            disabled={saving}
+            className="px-4 py-1.5 text-sm bg-corp text-white rounded hover:bg-corp-dark disabled:opacity-50"
+            onClick={handleSaveAll}
+          >
+            {saving ? "保存中..." : "保存"}
+          </button>
+          <button
+            disabled={saving}
+            className="px-3 py-1.5 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300 disabled:opacity-50"
+            onClick={handleDiscardChanges}
+          >
+            破棄
+          </button>
+        </div>
+      )}
 
       {/* ===== Gantt Chart ===== */}
       <div className="flex items-center gap-2 mb-2">
@@ -448,7 +518,7 @@ export default function GanttChart({ project, projectId, items, members, onRefre
           })}
 
           {/* Milestone markers */}
-          {project.milestones.map((ms) => {
+          {patchedProject.milestones.map((ms) => {
             if (!ms.due_date) return null;
             const leftPct = toPct(ms.due_date);
             const color = ms.status === "achieved" ? "text-green-500" : "text-yellow-500";
@@ -466,7 +536,7 @@ export default function GanttChart({ project, projectId, items, members, onRefre
 
           {/* Today line */}
           {todayPct !== null && (
-            <div className="flex pointer-events-none" style={{ position: "relative", marginTop: `-${(sortedPhases.length * 40) + (project.milestones.length * 32) + 32}px`, height: `${(sortedPhases.length * 40) + (project.milestones.length * 32) + 32}px` }}>
+            <div className="flex pointer-events-none" style={{ position: "relative", marginTop: `-${(sortedPhases.length * 40) + (patchedProject.milestones.length * 32) + 32}px`, height: `${(sortedPhases.length * 40) + (patchedProject.milestones.length * 32) + 32}px` }}>
               <div className="shrink-0" style={{ width: `${LABEL_WIDTH}px` }} />
               <div className="flex-1 relative">
                 <div className="absolute top-0 bottom-0 border-l-2 border-dashed border-red-400" style={{ left: `${todayPct}%` }} />
@@ -543,34 +613,33 @@ export default function GanttChart({ project, projectId, items, members, onRefre
                       <input
                         type="text"
                         className="border border-transparent hover:border-gray-300 focus:border-corp rounded px-2 py-0.5 text-sm bg-transparent focus:bg-white transition-colors outline-none flex-1"
-                        defaultValue={phase.name}
-                        onBlur={(e) => { if (e.target.value !== phase.name) handlePhaseUpdate(phase.id, { name: e.target.value }); }}
-                        onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); }}
+                        value={phase.name}
+                        onChange={(e) => handlePhaseUpdate(phase.id, { name: e.target.value })}
                       />
                       <label className="text-xs text-gray-400">開始:</label>
                       <input
                         type="date"
                         className="border border-transparent hover:border-gray-300 focus:border-corp rounded px-2 py-0.5 text-sm bg-transparent focus:bg-white transition-colors outline-none"
-                        defaultValue={phase.start_date}
-                        onBlur={(e) => { if (e.target.value !== phase.start_date) handlePhaseUpdate(phase.id, { start_date: e.target.value || null }); }}
+                        value={phase.start_date ?? ""}
+                        onChange={(e) => handlePhaseUpdate(phase.id, { start_date: e.target.value || null })}
                       />
                       <label className="text-xs text-gray-400">終了:</label>
                       <input
                         type="date"
                         className="border border-transparent hover:border-gray-300 focus:border-corp rounded px-2 py-0.5 text-sm bg-transparent focus:bg-white transition-colors outline-none"
-                        defaultValue={phase.end_date}
-                        onBlur={(e) => { if (e.target.value !== phase.end_date) handlePhaseUpdate(phase.id, { end_date: e.target.value || null }); }}
+                        value={phase.end_date ?? ""}
+                        onChange={(e) => handlePhaseUpdate(phase.id, { end_date: e.target.value || null })}
                       />
                       <label className="text-xs text-gray-400">実績終了:</label>
                       <input
                         type="date"
                         className="border border-transparent hover:border-gray-300 focus:border-corp rounded px-2 py-0.5 text-sm bg-transparent focus:bg-white transition-colors outline-none"
-                        defaultValue={phase.actual_end_date ?? ""}
-                        onBlur={(e) => { if (e.target.value !== (phase.actual_end_date ?? "")) handlePhaseUpdate(phase.id, { actual_end_date: e.target.value || null }); }}
+                        value={phase.actual_end_date ?? ""}
+                        onChange={(e) => handlePhaseUpdate(phase.id, { actual_end_date: e.target.value || null })}
                       />
                       <select
                         className="border border-transparent hover:border-gray-300 focus:border-corp rounded px-1 py-0.5 text-sm bg-transparent focus:bg-white transition-colors outline-none"
-                        defaultValue={phase.status}
+                        value={phase.status}
                         onChange={(e) => handlePhaseUpdate(phase.id, { status: e.target.value })}
                       >
                         <option value="not_started">{STATUS_LABELS.not_started}</option>
