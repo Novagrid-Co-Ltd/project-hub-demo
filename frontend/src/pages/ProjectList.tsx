@@ -11,7 +11,7 @@ function statusBadge(status: ProjectListItem["status"]) {
   const colors: Record<ProjectListItem["status"], string> = {
     active: "bg-green-100 text-green-800",
     on_hold: "bg-yellow-100 text-yellow-800",
-    completed: "bg-blue-100 text-blue-800",
+    completed: "bg-corp-light text-corp-dark",
     archived: "bg-gray-100 text-gray-600",
   };
   return (
@@ -89,7 +89,7 @@ export default function ProjectList() {
       <div className="py-8 text-center">
         <p className="text-sm text-red-600 mb-2">{error}</p>
         <button
-          className="text-sm text-blue-600 hover:underline"
+          className="text-sm text-corp hover:underline"
           onClick={fetchProjects}
         >
           再読み込み
@@ -120,7 +120,7 @@ export default function ProjectList() {
           </button>
           <Link
             to="/projects/new"
-            className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-medium no-underline hover:bg-blue-700"
+            className="bg-corp text-white px-4 py-1.5 rounded text-sm font-medium no-underline hover:bg-corp-dark"
           >
             ＋ 新規PJ作成
           </Link>
@@ -128,7 +128,7 @@ export default function ProjectList() {
       </div>
 
       {actionMsg && (
-        <div className="mb-4 p-3 bg-blue-50 text-blue-800 text-sm rounded border border-blue-200">
+        <div className="mb-4 p-3 bg-corp-light text-corp-dark text-sm rounded border border-corp/30">
           {actionMsg}
         </div>
       )}

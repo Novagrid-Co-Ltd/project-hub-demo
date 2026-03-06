@@ -119,10 +119,10 @@ export async function extractForMeeting(meetingId: string): Promise<{
   milestoneCount: number;
   projectIds: string[];
 }> {
-  // 1. 議事録テキスト取得
+  // 1. 議事録テキスト取得（event_startも取得）
   const { data: meeting, error: meetingError } = await getSupabase()
     .from("row_meeting_raw")
-    .select("id, transcript, event_summary")
+    .select("id, transcript, event_summary, event_start")
     .eq("id", meetingId)
     .single();
 
@@ -135,6 +135,11 @@ export async function extractForMeeting(meetingId: string): Promise<{
     return { items: [], milestoneCount: 0, projectIds: [] };
   }
 
+  // 会議日付をYYYY-MM-DD形式に変換
+  const meetingDate = meeting.event_start
+    ? new Date(meeting.event_start).toISOString().split("T")[0]
+    : new Date().toISOString().split("T")[0];
+
   // 2. PJ紐付けを確認（なければマッチング試行）
   const projectIds = await ensureMeetingProjectLinks(meetingId);
 
@@ -143,7 +148,7 @@ export async function extractForMeeting(meetingId: string): Promise<{
     return { items: [], milestoneCount: 0, projectIds: [] };
   }
 
-  logger.info("Extracting for meeting", { meetingId, projectCount: projectIds.length, promptVersion: EXTRACTION_PROMPT_VERSION });
+  logger.info("Extracting for meeting", { meetingId, meetingDate, projectCount: projectIds.length, promptVersion: EXTRACTION_PROMPT_VERSION });
 
   const allItems: ExtractedItem[] = [];
   let totalMilestoneCount = 0;
@@ -153,12 +158,12 @@ export async function extractForMeeting(meetingId: string): Promise<{
     try {
       const ctx = await getProjectContext(projectId);
 
-      // プロンプト生成
+      // プロンプト生成（会議日付を渡す）
       const prompt = buildExtractionPrompt(meeting.transcript, {
         name: ctx.name,
         members: ctx.members,
         phases: ctx.phases,
-      });
+      }, meetingDate);
 
       // Gemini呼び出し（generateAndParse内部でリトライ1回あり）
       const { parsed, raw } = await generateAndParse<ExtractionResult>(prompt);

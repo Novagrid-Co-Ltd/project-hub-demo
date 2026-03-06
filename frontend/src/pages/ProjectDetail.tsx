@@ -127,7 +127,7 @@ export default function ProjectDetail() {
           {error ?? "プロジェクトが見つかりません"}
         </p>
         <button
-          className="text-sm text-blue-600 hover:underline"
+          className="text-sm text-corp hover:underline"
           onClick={fetchData}
         >
           再読み込み
@@ -150,7 +150,7 @@ export default function ProjectDetail() {
             key={tab.key}
             className={`px-4 py-2 text-sm -mb-px ${
               activeTab === tab.key
-                ? "border-b-2 border-blue-600 text-blue-600 font-medium"
+                ? "border-b-2 border-corp text-corp font-medium"
                 : "text-gray-500 hover:text-gray-700"
             }`}
             onClick={() => setActiveTab(tab.key)}
@@ -161,7 +161,7 @@ export default function ProjectDetail() {
       </div>
 
       {/* Tab content */}
-      {activeTab === "gantt" && <GanttChart project={project} />}
+      {activeTab === "gantt" && <GanttChart project={project} projectId={projectData.id} items={items} members={members} onRefresh={fetchData} />}
       {activeTab === "overview" && (
         <ProjectOverview
           project={project}

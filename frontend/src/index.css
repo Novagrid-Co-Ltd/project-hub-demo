@@ -1,1 +1,7 @@
 @import "tailwindcss";
+
+@theme {
+  --color-corp: #0098BB;
+  --color-corp-light: #e6f5f9;
+  --color-corp-dark: #007a96;
+}

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import type { Project, Member } from "../mock/data";
-import { updateProject } from "../lib/api";
+import { updateProject, addProjectMember, updateProjectMemberRole, removeProjectMember } from "../lib/api";
 
 interface Props {
   project: Project;
@@ -166,8 +166,10 @@ const statusLabels: Record<string, string> = {
 
 export default function ProjectOverview({ project, members, projectId, onSaved }: Props) {
   const [localProject, setLocalProject] = useState(project);
+  const [addingMember, setAddingMember] = useState(false);
+  const [newMemberId, setNewMemberId] = useState("");
+  const [newMemberRole, setNewMemberRole] = useState("");
 
-  // Sync localProject when parent re-fetches data
   useEffect(() => {
     setLocalProject(project);
   }, [project]);
@@ -178,7 +180,6 @@ export default function ProjectOverview({ project, members, projectId, onSaved }
       await updateProject(projectId, patch);
       onSaved();
     } catch {
-      // revert on error
       setLocalProject(project);
     }
   };
@@ -187,6 +188,43 @@ export default function ProjectOverview({ project, members, projectId, onSaved }
     const m = members.find((x) => x.id === memberId);
     return m ? m.name : memberId;
   };
+
+  const handleRoleChange = async (memberId: string, newRole: string) => {
+    try {
+      await updateProjectMemberRole(projectId, memberId, newRole);
+      onSaved();
+    } catch {
+      alert("ロールの更新に失敗しました");
+    }
+  };
+
+  const handleRemoveMember = async (memberId: string) => {
+    const name = resolveName(memberId);
+    if (!confirm(`${name} をプロジェクトから削除しますか？`)) return;
+    try {
+      await removeProjectMember(projectId, memberId);
+      onSaved();
+    } catch {
+      alert("メンバーの削除に失敗しました");
+    }
+  };
+
+  const handleAddMember = async () => {
+    if (!newMemberId) return;
+    try {
+      await addProjectMember(projectId, newMemberId, newMemberRole);
+      setAddingMember(false);
+      setNewMemberId("");
+      setNewMemberRole("");
+      onSaved();
+    } catch {
+      alert("メンバーの追加に失敗しました");
+    }
+  };
+
+  // メンバー追加候補: 既にPJに入っているメンバーを除外
+  const currentMemberIds = new Set(localProject.members.map((m) => m.member_id));
+  const availableMembers = members.filter((m) => !currentMemberIds.has(m.id));
 
   return (
     <div className="space-y-6">
@@ -252,21 +290,96 @@ export default function ProjectOverview({ project, members, projectId, onSaved }
 
       {/* Members */}
       <section>
-        <h3 className="text-sm font-semibold text-gray-500 mb-2">メンバー</h3>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-sm font-semibold text-gray-500">メンバー</h3>
+          {!addingMember && (
+            <button
+              className="text-xs text-corp hover:text-corp-dark"
+              onClick={() => setAddingMember(true)}
+            >
+              + メンバー追加
+            </button>
+          )}
+        </div>
         <table className="text-sm w-full max-w-xl">
           <thead>
             <tr className="border-b border-gray-200 text-left text-gray-500">
               <th className="py-1 pr-4 font-medium">名前</th>
               <th className="py-1 font-medium">役割</th>
+              <th className="py-1 font-medium w-16"></th>
             </tr>
           </thead>
           <tbody>
             {localProject.members.map((pm) => (
-              <tr key={pm.member_id} className="border-b border-gray-100">
+              <tr key={pm.member_id} className="border-b border-gray-100 group">
                 <td className="py-2 pr-4">{resolveName(pm.member_id)}</td>
-                <td className="py-2">{pm.role}</td>
+                <td className="py-2">
+                  <InlineEdit
+                    value={pm.role}
+                    onSave={(v) => handleRoleChange(pm.member_id, v)}
+                  />
+                </td>
+                <td className="py-2 text-right">
+                  <button
+                    className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => handleRemoveMember(pm.member_id)}
+                  >
+                    削除
+                  </button>
+                </td>
               </tr>
             ))}
+
+            {/* Add member row */}
+            {addingMember && (
+              <tr className="border-b border-gray-100 bg-corp-light">
+                <td className="py-2 pr-4">
+                  <select
+                    className="border border-gray-300 rounded px-1 py-0.5 text-sm w-full"
+                    value={newMemberId}
+                    onChange={(e) => setNewMemberId(e.target.value)}
+                  >
+                    <option value="">選択してください</option>
+                    {availableMembers.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                  </select>
+                </td>
+                <td className="py-2">
+                  <input
+                    type="text"
+                    className="border border-gray-300 rounded px-1 py-0.5 text-sm w-full"
+                    placeholder="役割（例: PM, Engineer）"
+                    value={newMemberRole}
+                    onChange={(e) => setNewMemberRole(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handleAddMember();
+                      if (e.key === "Escape") setAddingMember(false);
+                    }}
+                  />
+                </td>
+                <td className="py-2 text-right space-x-1">
+                  <button
+                    className="text-xs text-corp hover:text-corp-dark"
+                    onClick={handleAddMember}
+                  >
+                    追加
+                  </button>
+                  <button
+                    className="text-xs text-gray-400 hover:text-gray-600"
+                    onClick={() => {
+                      setAddingMember(false);
+                      setNewMemberId("");
+                      setNewMemberRole("");
+                    }}
+                  >
+                    取消
+                  </button>
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </section>

@@ -19,6 +19,19 @@ function authenticateApiKey(req: Request, res: Response, next: () => void): void
   next();
 }
 
+// POST /api/extract/batch - 未抽出の会議を一括抽出 (must be before :meetingId)
+router.post("/api/extract/batch", authenticateApiKey, async (_req: Request, res: Response) => {
+  try {
+    logger.info("Batch extraction requested");
+    const { results, summary } = await extractBatch();
+    res.json({ ok: true, results, summary });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logger.error("Batch extraction failed", { error: message });
+    res.status(500).json({ ok: false, error: { code: "BATCH_EXTRACTION_FAILED", message, step: "batch_extraction" } });
+  }
+});
+
 // POST /api/extract/:meetingId - 指定会議の議事録から抽出
 router.post("/api/extract/:meetingId", authenticateApiKey, async (req: Request, res: Response) => {
   const meetingId = req.params.meetingId as string;
@@ -38,19 +51,6 @@ router.post("/api/extract/:meetingId", authenticateApiKey, async (req: Request, 
     const message = err instanceof Error ? err.message : String(err);
     logger.error("Extraction failed", { meetingId, error: message });
     res.status(500).json({ ok: false, error: { code: "EXTRACTION_FAILED", message, step: "extraction" } });
-  }
-});
-
-// POST /api/extract/batch - 未抽出の会議を一括抽出
-router.post("/api/extract/batch", authenticateApiKey, async (_req: Request, res: Response) => {
-  try {
-    logger.info("Batch extraction requested");
-    const { results, summary } = await extractBatch();
-    res.json({ ok: true, results, summary });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error("Batch extraction failed", { error: message });
-    res.status(500).json({ ok: false, error: { code: "BATCH_EXTRACTION_FAILED", message, step: "batch_extraction" } });
   }
 });
 

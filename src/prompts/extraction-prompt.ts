@@ -1,4 +1,4 @@
-export const EXTRACTION_PROMPT_VERSION = "extraction-v2.0.0";
+export const EXTRACTION_PROMPT_VERSION = "extraction-v2.1.0";
 
 export interface ProjectContext {
   name: string;
@@ -6,7 +6,7 @@ export interface ProjectContext {
   phases: { name: string; status: string }[];
 }
 
-export function buildExtractionPrompt(transcript: string, projectInfo: ProjectContext): string {
+export function buildExtractionPrompt(transcript: string, projectInfo: ProjectContext, meetingDate: string): string {
   const membersBlock = projectInfo.members.map((m) => `- ${m.name}（${m.role}）`).join("\n");
   const phasesBlock = projectInfo.phases.map((p) => `- ${p.name}: ${p.status}`).join("\n");
 
@@ -19,6 +19,9 @@ ${membersBlock}
 
 現在のフェーズ:
 ${phasesBlock}
+
+## 会議情報
+会議開催日: ${meetingDate}
 
 ## 議事録
 ${transcript}
@@ -80,5 +83,7 @@ ${transcript}
 - 曖昧な発言は無理に抽出しない。確信度の高いもののみ抽出すること
 - source_quoteは議事録内の実際の発言を引用すること（要約や改変はしない）
 - itemsが0件の場合は空配列を返すこと
-- milestonesが0件の場合は空配列を返すこと`;
+- milestonesが0件の場合は空配列を返すこと
+- **重要: due_dateは会議開催日（${meetingDate}）を基準に推定すること。「来週」「今週中」「明日」等の相対的な日付表現は、会議開催日から計算して具体的なYYYY-MM-DD形式に変換すること。会議開催日より過去の日付にならないよう注意すること**
+- **重要: このプロジェクトに直接関係のない話題（他プロジェクト、雑談等）からはアイテムを抽出しないこと。プロジェクト名「${projectInfo.name}」に関連する内容のみ抽出すること**`;
 }

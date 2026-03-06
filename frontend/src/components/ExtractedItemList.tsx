@@ -1,10 +1,15 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import type { Member } from "../mock/data";
 import {
   confirmItem,
   rejectItem,
   updateItem as apiUpdateItem,
+  getSubtasks,
+  createSubtask,
+  updateSubtask,
+  deleteSubtask,
   type ExtractedItemRow,
+  type SubtaskRow,
 } from "../lib/api";
 
 interface Props {
@@ -17,36 +22,102 @@ interface Props {
 type StatusFilter = "all" | "draft" | "confirmed" | "rejected";
 type TypeFilter = "all" | "todo" | "decision" | "issue" | "phase_change";
 
-const typeBadge: Record<
-  ExtractedItemRow["type"],
-  { label: string; cls: string }
-> = {
-  todo: { label: "TODO", cls: "bg-blue-100 text-blue-800" },
+const typeBadge: Record<ExtractedItemRow["type"], { label: string; cls: string }> = {
+  todo: { label: "TODO", cls: "bg-corp-light text-corp-dark" },
   decision: { label: "決定事項", cls: "bg-green-100 text-green-800" },
   issue: { label: "課題", cls: "bg-red-100 text-red-800" },
-  phase_change: {
-    label: "フェーズ変更",
-    cls: "bg-purple-100 text-purple-800",
-  },
+  phase_change: { label: "フェーズ変更", cls: "bg-purple-100 text-purple-800" },
 };
 
-const priorityBadge: Record<
-  ExtractedItemRow["priority"],
-  { label: string; cls: string }
-> = {
+const priorityBadge: Record<ExtractedItemRow["priority"], { label: string; cls: string }> = {
   high: { label: "高", cls: "bg-red-100 text-red-700" },
   medium: { label: "中", cls: "bg-yellow-100 text-yellow-700" },
   low: { label: "低", cls: "bg-gray-100 text-gray-600" },
 };
 
-export default function ExtractedItemList({
-  items,
-  members,
-  onRefresh,
-}: Props) {
+function SubtaskList({ itemId }: { itemId: string }) {
+  const [subtasks, setSubtasks] = useState<SubtaskRow[]>([]);
+  const [newContent, setNewContent] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const fetchSubtasks = useCallback(async () => {
+    try {
+      const data = await getSubtasks(itemId);
+      setSubtasks(data);
+    } catch { /* ignore */ }
+    setLoading(false);
+  }, [itemId]);
+
+  useEffect(() => { fetchSubtasks(); }, [fetchSubtasks]);
+
+  const handleAdd = async () => {
+    if (!newContent.trim()) return;
+    try {
+      await createSubtask(itemId, newContent.trim());
+      setNewContent("");
+      fetchSubtasks();
+    } catch { alert("サブタスクの追加に失敗しました"); }
+  };
+
+  const handleToggle = async (st: SubtaskRow) => {
+    try {
+      await updateSubtask(st.id, { done: !st.done });
+      fetchSubtasks();
+    } catch { alert("更新に失敗しました"); }
+  };
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteSubtask(id);
+      fetchSubtasks();
+    } catch { alert("削除に失敗しました"); }
+  };
+
+  if (loading) return <div className="text-xs text-gray-400 mt-1">読み込み中...</div>;
+
+  return (
+    <div className="mt-2 ml-4 space-y-1">
+      {subtasks.map((st) => (
+        <div key={st.id} className="flex items-center gap-2 group">
+          <input
+            type="checkbox"
+            checked={st.done}
+            onChange={() => handleToggle(st)}
+            className="accent-corp"
+          />
+          <span className={`text-xs flex-1 ${st.done ? "line-through text-gray-400" : "text-gray-700"}`}>
+            {st.content}
+          </span>
+          <button
+            className="text-xs text-red-400 hover:text-red-600 opacity-0 group-hover:opacity-100"
+            onClick={() => handleDelete(st.id)}
+          >
+            x
+          </button>
+        </div>
+      ))}
+      <div className="flex items-center gap-1">
+        <input
+          type="text"
+          className="border border-gray-200 rounded px-2 py-0.5 text-xs flex-1"
+          placeholder="サブタスクを追加..."
+          value={newContent}
+          onChange={(e) => setNewContent(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+        />
+        {newContent && (
+          <button className="text-xs text-corp hover:text-corp-dark" onClick={handleAdd}>追加</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function ExtractedItemList({ items, members, onRefresh }: Props) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState<{
     content: string;
     assignee_member_id: string | null;
@@ -130,9 +201,7 @@ export default function ExtractedItemList({
           <select
             className="border border-gray-300 rounded px-2 py-1 text-sm"
             value={statusFilter}
-            onChange={(e) =>
-              setStatusFilter(e.target.value as StatusFilter)
-            }
+            onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
           >
             <option value="all">すべて</option>
             <option value="draft">下書き</option>
@@ -160,26 +229,20 @@ export default function ExtractedItemList({
       {/* Item list */}
       <div className="space-y-2">
         {filtered.length === 0 && (
-          <p className="text-sm text-gray-400 py-4 text-center">
-            該当する項目がありません
-          </p>
+          <p className="text-sm text-gray-400 py-4 text-center">該当する項目がありません</p>
         )}
         {filtered.map((item) => {
           const isEditing = editingId === item.id;
+          const isExpanded = expandedId === item.id;
           const rowBg = item.status === "draft" ? "bg-gray-50" : "bg-white";
 
           return (
-            <div
-              key={item.id}
-              className={`border border-gray-200 rounded p-3 ${rowBg}`}
-            >
+            <div key={item.id} className={`border border-gray-200 rounded p-3 ${rowBg}`}>
               {isEditing && editDraft ? (
                 /* Edit mode */
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 mb-1">
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded ${typeBadge[item.type].cls}`}
-                    >
+                    <span className={`text-xs px-2 py-0.5 rounded ${typeBadge[item.type].cls}`}>
                       {typeBadge[item.type].label}
                     </span>
                   </div>
@@ -189,9 +252,7 @@ export default function ExtractedItemList({
                       className="border border-gray-300 rounded px-2 py-1 text-sm w-full"
                       rows={2}
                       value={editDraft.content}
-                      onChange={(e) =>
-                        setEditDraft({ ...editDraft, content: e.target.value })
-                      }
+                      onChange={(e) => setEditDraft({ ...editDraft, content: e.target.value })}
                     />
                   </div>
                   <div className="flex gap-3 flex-wrap">
@@ -200,18 +261,11 @@ export default function ExtractedItemList({
                       <select
                         className="border border-gray-300 rounded px-2 py-1 text-sm block"
                         value={editDraft.assignee_member_id ?? ""}
-                        onChange={(e) =>
-                          setEditDraft({
-                            ...editDraft,
-                            assignee_member_id: e.target.value || null,
-                          })
-                        }
+                        onChange={(e) => setEditDraft({ ...editDraft, assignee_member_id: e.target.value || null })}
                       >
                         <option value="">未割当</option>
                         {members.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name}
-                          </option>
+                          <option key={m.id} value={m.id}>{m.name}</option>
                         ))}
                       </select>
                     </div>
@@ -221,12 +275,7 @@ export default function ExtractedItemList({
                         type="date"
                         className="border border-gray-300 rounded px-2 py-1 text-sm block"
                         value={editDraft.due_date ?? ""}
-                        onChange={(e) =>
-                          setEditDraft({
-                            ...editDraft,
-                            due_date: e.target.value || null,
-                          })
-                        }
+                        onChange={(e) => setEditDraft({ ...editDraft, due_date: e.target.value || null })}
                       />
                     </div>
                     <div>
@@ -234,13 +283,7 @@ export default function ExtractedItemList({
                       <select
                         className="border border-gray-300 rounded px-2 py-1 text-sm block"
                         value={editDraft.priority}
-                        onChange={(e) =>
-                          setEditDraft({
-                            ...editDraft,
-                            priority: e.target
-                              .value as ExtractedItemRow["priority"],
-                          })
-                        }
+                        onChange={(e) => setEditDraft({ ...editDraft, priority: e.target.value as ExtractedItemRow["priority"] })}
                       >
                         <option value="high">高</option>
                         <option value="medium">中</option>
@@ -251,7 +294,7 @@ export default function ExtractedItemList({
                   <div className="flex gap-2 pt-1">
                     <button
                       disabled={busy}
-                      className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                      className="px-3 py-1 text-sm bg-corp text-white rounded hover:bg-corp-dark disabled:opacity-50"
                       onClick={() => saveEdit(item.id)}
                     >
                       保存
@@ -266,86 +309,87 @@ export default function ExtractedItemList({
                 </div>
               ) : (
                 /* Display mode */
-                <div className="flex items-start gap-3">
-                  {/* Left: type badge + content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1 flex-wrap">
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded ${typeBadge[item.type].cls}`}
-                      >
-                        {typeBadge[item.type].label}
-                      </span>
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded ${priorityBadge[item.priority].cls}`}
-                      >
-                        {priorityBadge[item.priority].label}
-                      </span>
-                      {item.status === "confirmed" && (
-                        <span
-                          className="text-green-600 text-sm"
-                          title="承認済み"
-                        >
-                          &#10003;
+                <div>
+                  <div className="flex items-start gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
+                        <span className={`text-xs px-2 py-0.5 rounded ${typeBadge[item.type].cls}`}>
+                          {typeBadge[item.type].label}
                         </span>
+                        <span className={`text-xs px-2 py-0.5 rounded ${priorityBadge[item.priority].cls}`}>
+                          {priorityBadge[item.priority].label}
+                        </span>
+                        {item.status === "confirmed" && (
+                          <span className="text-green-600 text-sm" title="承認済み">&#10003;</span>
+                        )}
+                      </div>
+                      <p className={`text-sm ${item.status === "rejected" ? "line-through text-gray-400" : "text-gray-800"}`}>
+                        {item.content}
+                      </p>
+                      <div className="flex gap-4 mt-1 text-xs text-gray-500">
+                        <span>担当: {resolveName(item.assignee_member_id)}</span>
+                        {item.due_date && <span>期限: {item.due_date}</span>}
+                      </div>
+                      {item.ai_original?.source_quote && (
+                        <div className="mt-1 text-xs text-gray-400 italic border-l-2 border-gray-200 pl-2">
+                          {item.ai_original.source_quote}
+                        </div>
                       )}
                     </div>
-                    <p
-                      className={`text-sm ${item.status === "rejected" ? "line-through text-gray-400" : "text-gray-800"}`}
-                    >
-                      {item.content}
-                    </p>
-                    <div className="flex gap-4 mt-1 text-xs text-gray-500">
-                      <span>
-                        担当: {resolveName(item.assignee_member_id)}
-                      </span>
-                      {item.due_date && <span>期限: {item.due_date}</span>}
+
+                    {/* Right: action buttons */}
+                    <div className="flex gap-1 shrink-0 flex-wrap">
+                      {item.type === "todo" && (
+                        <button
+                          className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200"
+                          onClick={() => setExpandedId(isExpanded ? null : item.id)}
+                        >
+                          {isExpanded ? "サブタスク閉" : "サブタスク"}
+                        </button>
+                      )}
+                      {item.status === "draft" && (
+                        <>
+                          {item.type === "phase_change" ? (
+                            <button
+                              disabled={busy}
+                              className="px-2 py-1 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
+                              onClick={() => handleApprove(item)}
+                            >
+                              フェーズ更新を承認
+                            </button>
+                          ) : (
+                            <button
+                              disabled={busy}
+                              className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                              onClick={() => handleApprove(item)}
+                              title="承認"
+                            >
+                              &#10003; 承認
+                            </button>
+                          )}
+                          <button
+                            disabled={busy}
+                            className="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 disabled:opacity-50"
+                            onClick={() => startEdit(item)}
+                            title="修正"
+                          >
+                            &#9998; 修正
+                          </button>
+                          <button
+                            disabled={busy}
+                            className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50"
+                            onClick={() => handleReject(item)}
+                            title="却下"
+                          >
+                            &#10007; 却下
+                          </button>
+                        </>
+                      )}
                     </div>
-                    {item.ai_original?.source_quote && (
-                      <div className="mt-1 text-xs text-gray-400 italic border-l-2 border-gray-200 pl-2">
-                        {item.ai_original.source_quote}
-                      </div>
-                    )}
                   </div>
 
-                  {/* Right: action buttons */}
-                  {item.status === "draft" && (
-                    <div className="flex gap-1 shrink-0">
-                      {item.type === "phase_change" ? (
-                        <button
-                          disabled={busy}
-                          className="px-2 py-1 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
-                          onClick={() => handleApprove(item)}
-                        >
-                          フェーズ更新を承認
-                        </button>
-                      ) : (
-                        <button
-                          disabled={busy}
-                          className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
-                          onClick={() => handleApprove(item)}
-                          title="承認"
-                        >
-                          &#10003; 承認
-                        </button>
-                      )}
-                      <button
-                        disabled={busy}
-                        className="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 disabled:opacity-50"
-                        onClick={() => startEdit(item)}
-                        title="修正"
-                      >
-                        &#9998; 修正
-                      </button>
-                      <button
-                        disabled={busy}
-                        className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50"
-                        onClick={() => handleReject(item)}
-                        title="却下"
-                      >
-                        &#10007; 却下
-                      </button>
-                    </div>
-                  )}
+                  {/* Subtasks */}
+                  {isExpanded && <SubtaskList itemId={item.id} />}
                 </div>
               )}
             </div>

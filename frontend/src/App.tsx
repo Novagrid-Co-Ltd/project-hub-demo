@@ -6,10 +6,10 @@ import ProjectDetail from "./pages/ProjectDetail";
 function App() {
   return (
     <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200 px-6 py-3">
+      <header className="bg-corp text-white px-6 py-3">
         <Link
           to="/projects"
-          className="text-xl font-bold text-gray-900 no-underline"
+          className="text-xl font-bold text-white no-underline"
         >
           PJ Hub
         </Link>

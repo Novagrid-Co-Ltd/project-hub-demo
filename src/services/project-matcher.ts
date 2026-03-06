@@ -18,12 +18,25 @@ export interface MatchResult {
 }
 
 /**
+ * event_summaryからPJ名を抽出する
+ * 想定フォーマット: 【定例】PJ名@MEIM@MEII や 【定例】PJ名 など
+ */
+function extractProjectNameFromSummary(eventSummary: string): string | null {
+  // 【...】の後ろのテキストを取得（@以降は除外）
+  const match = eventSummary.match(/【[^】]*】\s*(.+?)(?:@|$)/);
+  if (match && match[1]) {
+    return match[1].trim();
+  }
+  return null;
+}
+
+/**
  * 会議タイトルとPJのcalendar_keywordsを照合し、マッチしたPJに紐付ける
  */
 export async function matchMeetingToProjects(meetingId: string, meetingTitle: string): Promise<string[]> {
   const { data: projects } = await getSupabase()
     .from("projects")
-    .select("id, calendar_keywords")
+    .select("id, name, calendar_keywords")
     .in("status", ["active", "on_hold"]);
 
   if (!projects || projects.length === 0) return [];
@@ -31,15 +44,32 @@ export async function matchMeetingToProjects(meetingId: string, meetingTitle: st
   const titleLower = meetingTitle.toLowerCase();
   const matchedIds: string[] = [];
 
-  for (const pj of projects) {
-    const keywords: string[] = pj.calendar_keywords ?? [];
-    const matched = keywords.some((kw: string) => titleLower.includes(kw.toLowerCase()));
-    if (matched) {
-      matchedIds.push(pj.id);
+  // 1. event_summary から PJ名を抽出してマッチング
+  const extractedName = extractProjectNameFromSummary(meetingTitle);
+  if (extractedName) {
+    const extractedLower = extractedName.toLowerCase();
+    for (const pj of projects) {
+      if (pj.name.toLowerCase().includes(extractedLower) || extractedLower.includes(pj.name.toLowerCase())) {
+        matchedIds.push(pj.id);
+      }
+    }
+  }
+
+  // 2. calendar_keywords でマッチング（従来ロジック）
+  if (matchedIds.length === 0) {
+    for (const pj of projects) {
+      const keywords: string[] = pj.calendar_keywords ?? [];
+      const matched = keywords.some((kw: string) => titleLower.includes(kw.toLowerCase()));
+      if (matched) {
+        matchedIds.push(pj.id);
+      }
     }
   }
 
   if (matchedIds.length === 0) return [];
+
+  // 重複除去
+  const uniqueIds = [...new Set(matchedIds)];
 
   // 既に紐付け済みのものを除外
   const { data: existing } = await getSupabase()
@@ -48,7 +78,7 @@ export async function matchMeetingToProjects(meetingId: string, meetingTitle: st
     .eq("meeting_id", meetingId);
 
   const existingSet = new Set((existing ?? []).map((e: { project_id: string }) => e.project_id));
-  const newMatches = matchedIds.filter((id) => !existingSet.has(id));
+  const newMatches = uniqueIds.filter((id) => !existingSet.has(id));
 
   if (newMatches.length > 0) {
     const rows = newMatches.map((projectId) => ({
@@ -66,7 +96,16 @@ export async function matchMeetingToProjects(meetingId: string, meetingTitle: st
     }
   }
 
-  return matchedIds;
+  // マッチした場合、row_meeting_raw.project_name を更新
+  if (extractedName && uniqueIds.length > 0) {
+    await getSupabase()
+      .from("row_meeting_raw")
+      .update({ project_name: extractedName })
+      .eq("id", meetingId)
+      .is("project_name", null);
+  }
+
+  return uniqueIds;
 }
 
 /**

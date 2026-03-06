@@ -10,6 +10,7 @@ import milestonesRouter from "./routes/milestones.js";
 import extractedItemsRouter from "./routes/extracted-items.js";
 import projectMeetingsRouter from "./routes/project-meetings.js";
 import extractRouter from "./routes/extract.js";
+import subtasksRouter from "./routes/subtasks.js";
 
 const app = express();
 app.use(express.json());
@@ -35,6 +36,7 @@ app.use(milestonesRouter);
 app.use(extractedItemsRouter);
 app.use(projectMeetingsRouter);
 app.use(extractRouter);
+app.use(subtasksRouter);
 
 // Serve frontend static files
 const frontendDist = path.resolve(__dirname, "..", "frontend", "dist");

@@ -136,6 +136,28 @@ export async function getMembers(): Promise<MemberRow[]> {
   return res.data;
 }
 
+// --- Project Members ---
+
+export async function addProjectMember(projectId: string, memberId: string, role: string) {
+  return request<{ data: unknown }>(`/api/projects/${projectId}/members`, {
+    method: "POST",
+    body: JSON.stringify({ member_id: memberId, role }),
+  });
+}
+
+export async function updateProjectMemberRole(projectId: string, memberId: string, role: string) {
+  return request<{ data: unknown }>(`/api/projects/${projectId}/members/${memberId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ role }),
+  });
+}
+
+export async function removeProjectMember(projectId: string, memberId: string) {
+  return request<{ data: unknown }>(`/api/projects/${projectId}/members/${memberId}`, {
+    method: "DELETE",
+  });
+}
+
 // --- Extracted Items ---
 
 export interface ExtractedItemRow {
@@ -182,6 +204,85 @@ export async function confirmItem(id: string) {
 
 export async function rejectItem(id: string) {
   return request<{ data: ExtractedItemRow }>(`/api/extracted-items/${id}/reject`, { method: "PATCH" });
+}
+
+// --- Phases ---
+
+export async function createPhase(projectId: string, data: { name: string; sort_order?: number; start_date?: string; end_date?: string; status?: string }) {
+  return request<{ data: PhaseRow }>(`/api/projects/${projectId}/phases`, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function updatePhase(projectId: string, phaseId: string, data: Record<string, unknown>) {
+  return request<{ data: PhaseRow }>(`/api/projects/${projectId}/phases/${phaseId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deletePhase(projectId: string, phaseId: string) {
+  return request<{ ok: boolean }>(`/api/projects/${projectId}/phases/${phaseId}`, {
+    method: "DELETE",
+  });
+}
+
+// --- Milestones ---
+
+export async function createMilestone(projectId: string, data: { name: string; due_date?: string; phase_id?: string }) {
+  return request<{ data: MilestoneRow }>(`/api/projects/${projectId}/milestones`, {
+    method: "POST",
+    body: JSON.stringify({ ...data, source: "manual" }),
+  });
+}
+
+export async function updateMilestone(projectId: string, milestoneId: string, data: Record<string, unknown>) {
+  return request<{ data: MilestoneRow }>(`/api/projects/${projectId}/milestones/${milestoneId}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteMilestone(projectId: string, milestoneId: string) {
+  return request<{ ok: boolean }>(`/api/projects/${projectId}/milestones/${milestoneId}`, {
+    method: "DELETE",
+  });
+}
+
+// --- Subtasks ---
+
+export interface SubtaskRow {
+  id: string;
+  parent_item_id: string;
+  content: string;
+  done: boolean;
+  sort_order: number;
+}
+
+export async function getSubtasks(itemId: string): Promise<SubtaskRow[]> {
+  const res = await request<{ data: SubtaskRow[] }>(`/api/extracted-items/${itemId}/subtasks`);
+  return res.data;
+}
+
+export async function createSubtask(itemId: string, content: string) {
+  return request<{ data: SubtaskRow }>(`/api/extracted-items/${itemId}/subtasks`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+}
+
+export async function updateSubtask(id: string, data: { content?: string; done?: boolean }) {
+  return request<{ data: SubtaskRow }>(`/api/subtasks/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+}
+
+export async function deleteSubtask(id: string) {
+  return request<{ ok: boolean }>(`/api/subtasks/${id}`, {
+    method: "DELETE",
+  });
 }
 
 // --- Admin actions ---

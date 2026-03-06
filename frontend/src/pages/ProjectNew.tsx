@@ -169,13 +169,13 @@ export default function ProjectNew() {
             {keywords.map((kw) => (
               <span
                 key={kw}
-                className="inline-flex items-center gap-1 bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded"
+                className="inline-flex items-center gap-1 bg-corp-light text-corp-dark text-xs px-2 py-1 rounded"
               >
                 {kw}
                 <button
                   type="button"
                   onClick={() => removeKeyword(kw)}
-                  className="text-blue-500 hover:text-blue-700 cursor-pointer"
+                  className="text-corp hover:text-corp-dark cursor-pointer"
                 >
                   &times;
                 </button>
@@ -350,7 +350,7 @@ export default function ProjectNew() {
           <button
             type="button"
             onClick={addPhaseRow}
-            className="text-sm text-blue-600 hover:text-blue-800 cursor-pointer"
+            className="text-sm text-corp hover:text-corp-dark cursor-pointer"
           >
             ＋ フェーズ追加
           </button>
@@ -361,7 +361,7 @@ export default function ProjectNew() {
           <button
             type="submit"
             disabled={submitting}
-            className="bg-blue-600 text-white px-6 py-2 rounded text-sm font-medium hover:bg-blue-700 cursor-pointer disabled:opacity-50"
+            className="bg-corp text-white px-6 py-2 rounded text-sm font-medium hover:bg-corp-dark cursor-pointer disabled:opacity-50"
           >
             {submitting ? "保存中..." : "保存"}
           </button>
