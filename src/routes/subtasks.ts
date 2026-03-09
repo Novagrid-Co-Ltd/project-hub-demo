@@ -30,7 +30,7 @@ function auth(req: Request, res: Response, next: () => void): void {
 router.get("/api/extracted-items/:itemId/subtasks", auth, async (req: Request, res: Response) => {
   try {
     const { data, error } = await sb()
-      .from("subtasks")
+      .from("pjhub_subtasks")
       .select("*")
       .eq("parent_item_id", req.params.itemId)
       .order("sort_order");
@@ -52,7 +52,7 @@ router.post("/api/extracted-items/:itemId/subtasks", auth, async (req: Request, 
       return;
     }
     const { data, error } = await sb()
-      .from("subtasks")
+      .from("pjhub_subtasks")
       .insert({
         parent_item_id: req.params.itemId,
         content,
@@ -75,7 +75,7 @@ router.patch("/api/subtasks/:id", auth, async (req: Request, res: Response) => {
   try {
     const body = req.body as { content?: string; done?: boolean; sort_order?: number };
     const { data, error } = await sb()
-      .from("subtasks")
+      .from("pjhub_subtasks")
       .update(body)
       .eq("id", req.params.id)
       .select()
@@ -94,7 +94,7 @@ router.patch("/api/subtasks/:id", auth, async (req: Request, res: Response) => {
 router.delete("/api/subtasks/:id", auth, async (req: Request, res: Response) => {
   try {
     const { error } = await sb()
-      .from("subtasks")
+      .from("pjhub_subtasks")
       .delete()
       .eq("id", req.params.id);
     if (error) throw error;

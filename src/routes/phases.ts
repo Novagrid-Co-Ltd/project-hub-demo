@@ -31,7 +31,7 @@ function auth(req: Request, res: Response, next: () => void): void {
 router.get("/api/projects/:projectId/phases", auth, async (req: Request, res: Response) => {
   try {
     const { data, error } = await sb()
-      .from("phases")
+      .from("pjhub_phases")
       .select("*")
       .eq("project_id", req.params.projectId)
       .order("sort_order");
@@ -49,7 +49,7 @@ router.post("/api/projects/:projectId/phases", auth, async (req: Request, res: R
   try {
     const body = req.body as PhaseCreateRequest;
     const { data, error } = await sb()
-      .from("phases")
+      .from("pjhub_phases")
       .insert({
         project_id: req.params.projectId,
         name: body.name,
@@ -75,7 +75,7 @@ router.patch("/api/projects/:projectId/phases/:phaseId", auth, async (req: Reque
   try {
     const body = req.body as PhaseUpdateRequest;
     const { data, error } = await sb()
-      .from("phases")
+      .from("pjhub_phases")
       .update(body)
       .eq("id", req.params.phaseId)
       .eq("project_id", req.params.projectId)
@@ -95,7 +95,7 @@ router.patch("/api/projects/:projectId/phases/:phaseId", auth, async (req: Reque
 router.delete("/api/projects/:projectId/phases/:phaseId", auth, async (req: Request, res: Response) => {
   try {
     const { error } = await sb()
-      .from("phases")
+      .from("pjhub_phases")
       .delete()
       .eq("id", req.params.phaseId)
       .eq("project_id", req.params.projectId);

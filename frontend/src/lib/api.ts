@@ -50,7 +50,7 @@ export interface ProjectMemberRow {
   id: string;
   member_id: string;
   role: string;
-  master_person_identity: { id: string; display_name: string; email: string } | { id: string; display_name: string; email: string }[] | null;
+  mst_person_identity: { id: string; display_name: string; email: string } | { id: string; display_name: string; email: string }[] | null;
 }
 
 export interface PhaseRow {

@@ -71,9 +71,9 @@ function toMembers(
     memberMap.set(am.id, { id: am.id, name: am.display_name, email: am.email });
   }
   for (const pm of projectMembers) {
-    const mpi = Array.isArray(pm.master_person_identity)
-      ? pm.master_person_identity[0]
-      : pm.master_person_identity;
+    const mpi = Array.isArray(pm.mst_person_identity)
+      ? pm.mst_person_identity[0]
+      : pm.mst_person_identity;
     if (mpi && !memberMap.has(mpi.id)) {
       memberMap.set(mpi.id, { id: mpi.id, name: mpi.display_name, email: mpi.email });
     }

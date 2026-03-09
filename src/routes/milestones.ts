@@ -31,7 +31,7 @@ function auth(req: Request, res: Response, next: () => void): void {
 router.get("/api/projects/:projectId/milestones", auth, async (req: Request, res: Response) => {
   try {
     const { data, error } = await sb()
-      .from("milestones")
+      .from("pjhub_milestones")
       .select("*")
       .eq("project_id", req.params.projectId)
       .order("due_date");
@@ -49,7 +49,7 @@ router.post("/api/projects/:projectId/milestones", auth, async (req: Request, re
   try {
     const body = req.body as MilestoneCreateRequest;
     const { data, error } = await sb()
-      .from("milestones")
+      .from("pjhub_milestones")
       .insert({
         project_id: req.params.projectId,
         name: body.name,
@@ -75,7 +75,7 @@ router.patch("/api/projects/:projectId/milestones/:milestoneId", auth, async (re
   try {
     const body = req.body as MilestoneUpdateRequest;
     const { data, error } = await sb()
-      .from("milestones")
+      .from("pjhub_milestones")
       .update(body)
       .eq("id", req.params.milestoneId)
       .eq("project_id", req.params.projectId)
@@ -95,7 +95,7 @@ router.patch("/api/projects/:projectId/milestones/:milestoneId", auth, async (re
 router.delete("/api/projects/:projectId/milestones/:milestoneId", auth, async (req: Request, res: Response) => {
   try {
     const { error } = await sb()
-      .from("milestones")
+      .from("pjhub_milestones")
       .delete()
       .eq("id", req.params.milestoneId)
       .eq("project_id", req.params.projectId);

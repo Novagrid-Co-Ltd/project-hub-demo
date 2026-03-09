@@ -30,7 +30,7 @@ function auth(req: Request, res: Response, next: () => void): void {
 router.get("/api/members", auth, async (_req: Request, res: Response) => {
   try {
     const { data, error } = await sb()
-      .from("master_person_identity")
+      .from("mst_person_identity")
       .select("id, display_name, email, department, role")
       .order("display_name");
     if (error) throw error;
@@ -54,7 +54,7 @@ router.post("/api/projects/:projectId/members", auth, async (req: Request, res: 
     }
 
     const { data, error } = await sb()
-      .from("project_members")
+      .from("pjhub_project_members")
       .upsert({ project_id: projectId, member_id, role: role ?? "" }, { onConflict: "project_id,member_id" })
       .select()
       .single();
@@ -77,7 +77,7 @@ router.patch("/api/projects/:projectId/members/:memberId", auth, async (req: Req
     const { role } = req.body as { role: string };
 
     const { data, error } = await sb()
-      .from("project_members")
+      .from("pjhub_project_members")
       .update({ role })
       .eq("project_id", projectId)
       .eq("member_id", memberId)
@@ -101,7 +101,7 @@ router.delete("/api/projects/:projectId/members/:memberId", auth, async (req: Re
     const { projectId, memberId } = req.params;
 
     const { error } = await sb()
-      .from("project_members")
+      .from("pjhub_project_members")
       .delete()
       .eq("project_id", projectId)
       .eq("member_id", memberId);

@@ -85,6 +85,19 @@ export default function GanttChart({ project, projectId, items, members, onRefre
     (item) => item.status === "confirmed" && (item.type === "todo" || item.type === "decision")
   );
 
+  // Apply pending changes to display data optimistically
+  const patchedProject = useMemo(() => {
+    const phases = project.phases.map((ph) => {
+      const patch = pendingPhases[ph.id];
+      return patch ? { ...ph, ...patch } as typeof ph : ph;
+    });
+    const milestones = project.milestones.map((ms) => {
+      const patch = pendingMilestones[ms.id];
+      return patch ? { ...ms, ...patch } as typeof ms : ms;
+    });
+    return { ...project, phases, milestones };
+  }, [project, pendingPhases, pendingMilestones]);
+
   const resolveName = (id: string | null): string => {
     if (!id) return "-";
     const m = members.find((x) => x.id === id);
@@ -328,19 +341,6 @@ export default function GanttChart({ project, projectId, items, members, onRefre
       onRefresh();
     } catch { alert("マイルストーンの追加に失敗しました"); }
   };
-
-  // Apply pending changes to display data optimistically
-  const patchedProject = useMemo(() => {
-    const phases = project.phases.map((ph) => {
-      const patch = pendingPhases[ph.id];
-      return patch ? { ...ph, ...patch } as typeof ph : ph;
-    });
-    const milestones = project.milestones.map((ms) => {
-      const patch = pendingMilestones[ms.id];
-      return patch ? { ...ms, ...patch } as typeof ms : ms;
-    });
-    return { ...project, phases, milestones };
-  }, [project, pendingPhases, pendingMilestones]);
 
   // Render items list (decisions first, then TODOs)
   const renderItems = (itemList: ExtractedItemRow[]) => {

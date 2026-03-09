@@ -25,7 +25,7 @@ const VALID_PRIORITIES = new Set(["high", "medium", "low"]);
  */
 async function getProjectContext(projectId: string): Promise<ProjectContext & { id: string; memberNameToId: Map<string, string> }> {
   const { data: project } = await getSupabase()
-    .from("projects")
+    .from("pjhub_projects")
     .select("id, name")
     .eq("id", projectId)
     .single();
@@ -34,14 +34,14 @@ async function getProjectContext(projectId: string): Promise<ProjectContext & { 
 
   // メンバー取得
   const { data: pm } = await getSupabase()
-    .from("project_members")
-    .select("member_id, role, master_person_identity(display_name)")
+    .from("pjhub_project_members")
+    .select("member_id, role, mst_person_identity(display_name)")
     .eq("project_id", projectId);
 
   const memberNameToId = new Map<string, string>();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const members = (pm ?? []).map((r: any) => {
-    const mpi = r.master_person_identity;
+    const mpi = r.mst_person_identity;
     const name = Array.isArray(mpi) ? mpi[0]?.display_name ?? "" : mpi?.display_name ?? "";
     if (name) memberNameToId.set(name, r.member_id);
     return { name, role: r.role ?? "" };
@@ -49,7 +49,7 @@ async function getProjectContext(projectId: string): Promise<ProjectContext & { 
 
   // フェーズ取得
   const { data: phases } = await getSupabase()
-    .from("phases")
+    .from("pjhub_phases")
     .select("id, name, status")
     .eq("project_id", projectId)
     .order("sort_order");
@@ -121,7 +121,7 @@ export async function extractForMeeting(meetingId: string): Promise<{
 }> {
   // 1. 議事録テキスト取得（event_startも取得）
   const { data: meeting, error: meetingError } = await getSupabase()
-    .from("row_meeting_raw")
+    .from("eval_meeting_raw")
     .select("id, transcript, event_summary, event_start")
     .eq("id", meetingId)
     .single();
@@ -220,7 +220,7 @@ export async function extractForMeeting(meetingId: string): Promise<{
         });
 
         const { data: inserted, error: insertError } = await getSupabase()
-          .from("extracted_items")
+          .from("pjhub_extracted_items")
           .insert(itemsToInsert)
           .select();
 
@@ -235,7 +235,7 @@ export async function extractForMeeting(meetingId: string): Promise<{
       if (validated.milestones.length > 0) {
         // フェーズ名→IDの解決
         const { data: phasesWithId } = await getSupabase()
-          .from("phases")
+          .from("pjhub_phases")
           .select("id, name")
           .eq("project_id", projectId);
 
@@ -255,7 +255,7 @@ export async function extractForMeeting(meetingId: string): Promise<{
         }));
 
         const { error: msError } = await getSupabase()
-          .from("milestones")
+          .from("pjhub_milestones")
           .insert(milestonesToInsert);
 
         if (msError) {
@@ -292,12 +292,12 @@ export async function extractBatch(): Promise<{
 }> {
   // extracted_items に存在しない会議を取得
   const { data: allMeetings } = await getSupabase()
-    .from("row_meeting_raw")
+    .from("eval_meeting_raw")
     .select("id")
     .order("created_at", { ascending: false });
 
   const { data: extractedMeetingIds } = await getSupabase()
-    .from("extracted_items")
+    .from("pjhub_extracted_items")
     .select("meeting_id");
 
   const extractedSet = new Set((extractedMeetingIds ?? []).map((e: { meeting_id: string }) => e.meeting_id));

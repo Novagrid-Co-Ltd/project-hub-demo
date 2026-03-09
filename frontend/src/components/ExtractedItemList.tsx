@@ -135,6 +135,9 @@ export default function ExtractedItemList({ items, members, milestones, onRefres
   } | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // Pending status changes (local draft before saving)
+  const [pendingChanges, setPendingChanges] = useState<Map<string, "confirmed" | "rejected">>(new Map());
+
   const resolveName = (id: string | null): string => {
     if (!id) return "-";
     const m = members.find((x) => x.id === id);
@@ -184,28 +187,55 @@ export default function ExtractedItemList({ items, members, milestones, onRefres
     setEditDraft(null);
   };
 
-  const handleApprove = async (item: ExtractedItemRow) => {
-    setBusy(true);
-    try {
-      await confirmItem(item.id);
-      onRefresh();
-    } catch (err) {
-      alert(`承認に失敗: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setBusy(false);
-    }
+  const handleApprove = (item: ExtractedItemRow) => {
+    setPendingChanges((prev) => {
+      const next = new Map(prev);
+      if (next.get(item.id) === "confirmed") {
+        next.delete(item.id); // toggle off
+      } else {
+        next.set(item.id, "confirmed");
+      }
+      return next;
+    });
   };
 
-  const handleReject = async (item: ExtractedItemRow) => {
+  const handleReject = (item: ExtractedItemRow) => {
+    setPendingChanges((prev) => {
+      const next = new Map(prev);
+      if (next.get(item.id) === "rejected") {
+        next.delete(item.id); // toggle off
+      } else {
+        next.set(item.id, "rejected");
+      }
+      return next;
+    });
+  };
+
+  const savePendingChanges = async () => {
+    if (pendingChanges.size === 0) return;
     setBusy(true);
-    try {
-      await rejectItem(item.id);
-      onRefresh();
-    } catch (err) {
-      alert(`却下に失敗: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setBusy(false);
+    const errors: string[] = [];
+    for (const [itemId, action] of pendingChanges) {
+      try {
+        if (action === "confirmed") {
+          await confirmItem(itemId);
+        } else {
+          await rejectItem(itemId);
+        }
+      } catch (err) {
+        errors.push(`${itemId}: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
+    setPendingChanges(new Map());
+    setBusy(false);
+    if (errors.length > 0) {
+      alert(`一部の保存に失敗しました:\n${errors.join("\n")}`);
+    }
+    onRefresh();
+  };
+
+  const discardPendingChanges = () => {
+    setPendingChanges(new Map());
   };
 
   return (
@@ -242,6 +272,29 @@ export default function ExtractedItemList({ items, members, milestones, onRefres
         <span className="text-xs text-gray-400">{filtered.length}件表示</span>
       </div>
 
+      {/* Pending changes bar */}
+      {pendingChanges.size > 0 && (
+        <div className="flex items-center gap-3 bg-yellow-50 border border-yellow-300 rounded px-4 py-2">
+          <span className="text-sm text-yellow-800 font-medium">
+            {pendingChanges.size}件の未保存の変更があります
+          </span>
+          <button
+            disabled={busy}
+            className="px-3 py-1 text-sm bg-corp text-white rounded hover:bg-corp-dark disabled:opacity-50"
+            onClick={savePendingChanges}
+          >
+            {busy ? "保存中..." : "一括保存"}
+          </button>
+          <button
+            disabled={busy}
+            className="px-3 py-1 text-sm bg-gray-200 text-gray-700 rounded hover:bg-gray-300 disabled:opacity-50"
+            onClick={discardPendingChanges}
+          >
+            取り消し
+          </button>
+        </div>
+      )}
+
       {/* Item list */}
       <div className="space-y-2">
         {filtered.length === 0 && (
@@ -250,7 +303,12 @@ export default function ExtractedItemList({ items, members, milestones, onRefres
         {filtered.map((item) => {
           const isEditing = editingId === item.id;
           const isExpanded = expandedId === item.id;
-          const rowBg = item.status === "draft" ? "bg-gray-50" : "bg-white";
+          const pending = pendingChanges.get(item.id);
+          const rowBg = pending === "confirmed"
+            ? "bg-green-50 border-green-300"
+            : pending === "rejected"
+            ? "bg-red-50 border-red-300"
+            : item.status === "draft" ? "bg-gray-50" : "bg-white";
 
           return (
             <div key={item.id} className={`border border-gray-200 rounded p-3 ${rowBg}`}>
@@ -348,17 +406,40 @@ export default function ExtractedItemList({ items, members, milestones, onRefres
                         <span className={`text-xs px-2 py-0.5 rounded ${priorityBadge[item.priority].cls}`}>
                           {priorityBadge[item.priority].label}
                         </span>
-                        {item.status === "confirmed" && (
+                        {item.status === "confirmed" && !pending && (
                           <span className="text-green-600 text-sm" title="承認済み">&#10003;</span>
+                        )}
+                        {pending === "confirmed" && (
+                          <span className="text-green-600 text-xs bg-green-100 px-1.5 py-0.5 rounded">承認予定</span>
+                        )}
+                        {pending === "rejected" && (
+                          <span className="text-red-600 text-xs bg-red-100 px-1.5 py-0.5 rounded">却下予定</span>
                         )}
                       </div>
                       <p className={`text-sm ${item.status === "rejected" ? "line-through text-gray-400" : "text-gray-800"}`}>
                         {item.content}
                       </p>
-                      <div className="flex gap-4 mt-1 text-xs text-gray-500">
+                      <div className="flex gap-4 mt-1 text-xs text-gray-500 items-center">
                         <span>担当: {resolveName(item.assignee_member_id)}</span>
                         {item.due_date && <span>期限: {item.due_date}</span>}
-                        {item.milestone_id && <span>MS: {resolveMilestone(item.milestone_id)}</span>}
+                        <span className="flex items-center gap-1">
+                          MS:
+                          <select
+                            className="border border-gray-200 rounded px-1 py-0.5 text-xs bg-white"
+                            value={item.milestone_id ?? ""}
+                            onChange={async (e) => {
+                              try {
+                                await apiUpdateItem(item.id, { milestone_id: e.target.value || null });
+                                onRefresh();
+                              } catch { alert("マイルストーン更新に失敗しました"); }
+                            }}
+                          >
+                            <option value="">未割当</option>
+                            {milestones.map((ms) => (
+                              <option key={ms.id} value={ms.id}>{ms.name}</option>
+                            ))}
+                          </select>
+                        </span>
                       </div>
                       {item.ai_original?.source_quote && (
                         <div className="mt-1 text-xs text-gray-400 italic border-l-2 border-gray-200 pl-2">
@@ -377,41 +458,53 @@ export default function ExtractedItemList({ items, members, milestones, onRefres
                           {isExpanded ? "サブタスク閉" : "サブタスク"}
                         </button>
                       )}
+                      <button
+                        disabled={busy}
+                        className="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 disabled:opacity-50"
+                        onClick={() => startEdit(item)}
+                        title="修正"
+                      >
+                        &#9998; 修正
+                      </button>
                       {item.status === "draft" && (
                         <>
                           {item.type === "phase_change" ? (
                             <button
                               disabled={busy}
-                              className="px-2 py-1 text-xs bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50"
+                              className={`px-2 py-1 text-xs rounded disabled:opacity-50 ${
+                                pending === "confirmed"
+                                  ? "bg-purple-200 text-purple-800 ring-2 ring-purple-400"
+                                  : "bg-purple-600 text-white hover:bg-purple-700"
+                              }`}
                               onClick={() => handleApprove(item)}
                             >
-                              フェーズ更新を承認
+                              {pending === "confirmed" ? "承認取消" : "フェーズ更新を承認"}
                             </button>
                           ) : (
                             <button
                               disabled={busy}
-                              className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50"
+                              className={`px-2 py-1 text-xs rounded disabled:opacity-50 ${
+                                pending === "confirmed"
+                                  ? "bg-green-200 text-green-800 ring-2 ring-green-400"
+                                  : "bg-green-600 text-white hover:bg-green-700"
+                              }`}
                               onClick={() => handleApprove(item)}
                               title="承認"
                             >
-                              &#10003; 承認
+                              {pending === "confirmed" ? "&#10003; 承認取消" : "&#10003; 承認"}
                             </button>
                           )}
                           <button
                             disabled={busy}
-                            className="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300 disabled:opacity-50"
-                            onClick={() => startEdit(item)}
-                            title="修正"
-                          >
-                            &#9998; 修正
-                          </button>
-                          <button
-                            disabled={busy}
-                            className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200 disabled:opacity-50"
+                            className={`px-2 py-1 text-xs rounded disabled:opacity-50 ${
+                              pending === "rejected"
+                                ? "bg-red-300 text-red-900 ring-2 ring-red-400"
+                                : "bg-red-100 text-red-700 hover:bg-red-200"
+                            }`}
                             onClick={() => handleReject(item)}
                             title="却下"
                           >
-                            &#10007; 却下
+                            {pending === "rejected" ? "&#10007; 却下取消" : "&#10007; 却下"}
                           </button>
                         </>
                       )}

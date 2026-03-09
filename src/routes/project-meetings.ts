@@ -31,7 +31,7 @@ router.get("/api/projects/:projectId/meetings", auth, async (req: Request, res: 
   try {
     // No FK between project_meetings and row_meeting_raw, so manual join
     const { data: pmRows, error } = await sb()
-      .from("project_meetings")
+      .from("pjhub_project_meetings")
       .select("*")
       .eq("project_id", req.params.projectId)
       .order("created_at", { ascending: false });
@@ -45,7 +45,7 @@ router.get("/api/projects/:projectId/meetings", auth, async (req: Request, res: 
 
     const meetingIds = rows.map((r: { meeting_id: string }) => r.meeting_id);
     const { data: meetings } = await sb()
-      .from("row_meeting_raw")
+      .from("eval_meeting_raw")
       .select("id, event_summary, event_start, event_end, attendee_count")
       .in("id", meetingIds);
 
@@ -77,7 +77,7 @@ router.post("/api/projects/:projectId/meetings", auth, async (req: Request, res:
     }
 
     const { data, error } = await sb()
-      .from("project_meetings")
+      .from("pjhub_project_meetings")
       .upsert(
         { project_id: req.params.projectId, meeting_id, matched_by: "manual" },
         { onConflict: "project_id,meeting_id" }

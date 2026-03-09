@@ -30,7 +30,7 @@ function auth(req: Request, res: Response, next: () => void): void {
 // GET /api/extracted-items?project_id=xxx&status=draft
 router.get("/api/extracted-items", auth, async (req: Request, res: Response) => {
   try {
-    let query = sb().from("extracted_items").select("*").order("created_at", { ascending: false });
+    let query = sb().from("pjhub_extracted_items").select("*").order("created_at", { ascending: false });
 
     const projectId = req.query.project_id as string | undefined;
     if (projectId) query = query.eq("project_id", projectId);
@@ -56,7 +56,7 @@ router.patch("/api/extracted-items/:id", auth, async (req: Request, res: Respons
   try {
     const body = req.body as ExtractedItemUpdateRequest;
     const { data, error } = await sb()
-      .from("extracted_items")
+      .from("pjhub_extracted_items")
       .update(body)
       .eq("id", req.params.id)
       .select()
@@ -78,7 +78,7 @@ router.patch("/api/extracted-items/:id/confirm", auth, async (req: Request, res:
 
     // Fetch the item first
     const { data: item, error: fetchErr } = await sb()
-      .from("extracted_items")
+      .from("pjhub_extracted_items")
       .select("*")
       .eq("id", itemId)
       .single();
@@ -86,7 +86,7 @@ router.patch("/api/extracted-items/:id/confirm", auth, async (req: Request, res:
 
     // Update status
     const { data, error } = await sb()
-      .from("extracted_items")
+      .from("pjhub_extracted_items")
       .update({ status: "confirmed", confirmed_at: new Date().toISOString() })
       .eq("id", itemId)
       .select()
@@ -100,7 +100,7 @@ router.patch("/api/extracted-items/:id/confirm", auth, async (req: Request, res:
       if (aiOriginal.phase_completed) {
         // Mark completed phase
         const { error: completeErr } = await sb()
-          .from("phases")
+          .from("pjhub_phases")
           .update({ status: "completed", actual_end_date: new Date().toISOString().slice(0, 10) })
           .eq("project_id", item.project_id)
           .eq("name", aiOriginal.phase_completed)
@@ -111,7 +111,7 @@ router.patch("/api/extracted-items/:id/confirm", auth, async (req: Request, res:
       if (aiOriginal.phase_started) {
         // Mark started phase
         const { error: startErr } = await sb()
-          .from("phases")
+          .from("pjhub_phases")
           .update({ status: "in_progress" })
           .eq("project_id", item.project_id)
           .eq("name", aiOriginal.phase_started)
@@ -139,7 +139,7 @@ router.patch("/api/extracted-items/:id/confirm", auth, async (req: Request, res:
 router.patch("/api/extracted-items/:id/reject", auth, async (req: Request, res: Response) => {
   try {
     const { data, error } = await sb()
-      .from("extracted_items")
+      .from("pjhub_extracted_items")
       .update({ status: "rejected" })
       .eq("id", req.params.id)
       .select()

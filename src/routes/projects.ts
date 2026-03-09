@@ -31,7 +31,7 @@ function auth(req: Request, res: Response, next: () => void): void {
 router.get("/api/projects", auth, async (_req: Request, res: Response) => {
   try {
     const { data: projects, error } = await sb()
-      .from("projects")
+      .from("pjhub_projects")
       .select("*")
       .neq("status", "archived")
       .order("created_at", { ascending: false });
@@ -42,12 +42,12 @@ router.get("/api/projects", auth, async (_req: Request, res: Response) => {
       (projects ?? []).map(async (p) => {
         const [draftRes, phaseRes] = await Promise.all([
           sb()
-            .from("extracted_items")
+            .from("pjhub_extracted_items")
             .select("id", { count: "exact", head: true })
             .eq("project_id", p.id)
             .eq("status", "draft"),
           sb()
-            .from("phases")
+            .from("pjhub_phases")
             .select("name")
             .eq("project_id", p.id)
             .eq("status", "in_progress")
@@ -75,7 +75,7 @@ router.get("/api/projects/:id", auth, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { data: project, error } = await sb()
-      .from("projects")
+      .from("pjhub_projects")
       .select("*")
       .eq("id", id)
       .single();
@@ -83,21 +83,21 @@ router.get("/api/projects/:id", auth, async (req: Request, res: Response) => {
 
     const [membersRes, phasesRes, milestonesRes, pmRes] = await Promise.all([
       sb()
-        .from("project_members")
-        .select("*, master_person_identity(id, display_name, email)")
+        .from("pjhub_project_members")
+        .select("*, mst_person_identity(id, display_name, email)")
         .eq("project_id", id),
       sb()
-        .from("phases")
+        .from("pjhub_phases")
         .select("*")
         .eq("project_id", id)
         .order("sort_order"),
       sb()
-        .from("milestones")
+        .from("pjhub_milestones")
         .select("*")
         .eq("project_id", id)
         .order("due_date"),
       sb()
-        .from("project_meetings")
+        .from("pjhub_project_meetings")
         .select("*")
         .eq("project_id", id)
         .order("created_at", { ascending: false })
@@ -110,7 +110,7 @@ router.get("/api/projects/:id", auth, async (req: Request, res: Response) => {
     if (pmRows.length > 0) {
       const meetingIds = pmRows.map((r: { meeting_id: string }) => r.meeting_id);
       const { data: rawMeetings } = await sb()
-        .from("row_meeting_raw")
+        .from("eval_meeting_raw")
         .select("id, event_summary, event_start, event_end, attendee_count")
         .in("id", meetingIds);
       const meetingMap = new Map<string, unknown>();
@@ -150,7 +150,7 @@ router.post("/api/projects", auth, async (req: Request, res: Response) => {
 
     // 1. Insert project
     const { data: project, error: projectErr } = await sb()
-      .from("projects")
+      .from("pjhub_projects")
       .insert({
         name: body.name,
         description: body.description ?? "",
@@ -169,7 +169,7 @@ router.post("/api/projects", auth, async (req: Request, res: Response) => {
         member_id: m.member_id,
         role: m.role,
       }));
-      const { error: memberErr } = await sb().from("project_members").insert(memberRows);
+      const { error: memberErr } = await sb().from("pjhub_project_members").insert(memberRows);
       if (memberErr) throw memberErr;
     }
 
@@ -182,7 +182,7 @@ router.post("/api/projects", auth, async (req: Request, res: Response) => {
         start_date: p.start_date ?? null,
         end_date: p.end_date ?? null,
       }));
-      const { error: phaseErr } = await sb().from("phases").insert(phaseRows);
+      const { error: phaseErr } = await sb().from("pjhub_phases").insert(phaseRows);
       if (phaseErr) throw phaseErr;
     }
 
@@ -202,7 +202,7 @@ router.patch("/api/projects/:id", auth, async (req: Request, res: Response) => {
     const body = req.body as ProjectUpdateRequest;
 
     const { data, error } = await sb()
-      .from("projects")
+      .from("pjhub_projects")
       .update(body)
       .eq("id", id)
       .select()
@@ -223,7 +223,7 @@ router.delete("/api/projects/:id", auth, async (req: Request, res: Response) => 
   try {
     const { id } = req.params;
     const { error } = await sb()
-      .from("projects")
+      .from("pjhub_projects")
       .update({ status: "archived" })
       .eq("id", id);
     if (error) throw error;
