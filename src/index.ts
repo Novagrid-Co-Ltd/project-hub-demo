@@ -3,6 +3,8 @@ import path from "path";
 import { getConfig } from "./config.js";
 import { logger } from "./utils/logger.js";
 import healthRouter from "./routes/health.js";
+import debugRouter from "./routes/debug.js";
+import processMeetingRouter from "./routes/processMeeting.js";
 import projectsRouter from "./routes/projects.js";
 import membersRouter from "./routes/members.js";
 import phasesRouter from "./routes/phases.js";
@@ -11,6 +13,8 @@ import extractedItemsRouter from "./routes/extracted-items.js";
 import projectMeetingsRouter from "./routes/project-meetings.js";
 import extractRouter from "./routes/extract.js";
 import subtasksRouter from "./routes/subtasks.js";
+import monthlyReportRouter from "./routes/monthlyReport.js";
+import scoringCriteriaRouter from "./routes/scoring-criteria.js";
 
 const app = express();
 app.use(express.json());
@@ -29,6 +33,8 @@ app.use((_req, res, next) => {
 
 // API Routes
 app.use(healthRouter);
+app.use(debugRouter);
+app.use(processMeetingRouter);
 app.use(projectsRouter);
 app.use(membersRouter);
 app.use(phasesRouter);
@@ -37,6 +43,8 @@ app.use(extractedItemsRouter);
 app.use(projectMeetingsRouter);
 app.use(extractRouter);
 app.use(subtasksRouter);
+app.use(monthlyReportRouter);
+app.use(scoringCriteriaRouter);
 
 // Serve frontend static files
 const frontendDist = path.resolve(__dirname, "..", "frontend", "dist");

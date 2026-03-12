@@ -286,6 +286,84 @@ export async function deleteSubtask(id: string) {
   });
 }
 
+// --- Scoring Criteria ---
+
+export interface ScoringCriteriaRow {
+  id: string;
+  type: "meeting" | "individual";
+  key: string;
+  name_ja: string;
+  description_ja: string;
+  weight: number;
+  sort_order: number;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ScoringCriteriaHistoryRow {
+  id: string;
+  criteria_id: string;
+  action: "created" | "updated" | "deactivated" | "reactivated";
+  old_values: Record<string, unknown> | null;
+  new_values: Record<string, unknown> | null;
+  changed_by: string;
+  created_at: string;
+}
+
+export async function getCriteria(params?: { type?: string; active?: boolean }): Promise<ScoringCriteriaRow[]> {
+  const sp = new URLSearchParams();
+  if (params?.type) sp.set("type", params.type);
+  if (params?.active) sp.set("active", "true");
+  const qs = sp.toString();
+  const res = await request<{ data: ScoringCriteriaRow[] }>(`/api/scoring-criteria${qs ? `?${qs}` : ""}`);
+  return res.data;
+}
+
+export async function getCriteriaById(id: string): Promise<ScoringCriteriaRow> {
+  const res = await request<{ data: ScoringCriteriaRow }>(`/api/scoring-criteria/${id}`);
+  return res.data;
+}
+
+export async function createCriteria(data: {
+  type: string;
+  key: string;
+  name_ja: string;
+  description_ja: string;
+  weight?: number;
+  sort_order?: number;
+}): Promise<ScoringCriteriaRow> {
+  const res = await request<{ data: ScoringCriteriaRow }>("/api/scoring-criteria", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+  return res.data;
+}
+
+export async function updateCriteria(
+  id: string,
+  data: { name_ja?: string; description_ja?: string; weight?: number; sort_order?: number; is_active?: boolean },
+): Promise<ScoringCriteriaRow> {
+  const res = await request<{ data: ScoringCriteriaRow }>(`/api/scoring-criteria/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(data),
+  });
+  return res.data;
+}
+
+export async function getCriteriaHistory(id: string): Promise<ScoringCriteriaHistoryRow[]> {
+  const res = await request<{ data: ScoringCriteriaHistoryRow[] }>(`/api/scoring-criteria/${id}/history`);
+  return res.data;
+}
+
+export async function previewPrompt(type: string): Promise<{ type: string; criteriaCount: number; prompt: string }> {
+  const res = await request<{ data: { type: string; criteriaCount: number; prompt: string } }>(
+    "/api/scoring-criteria/preview-prompt",
+    { method: "POST", body: JSON.stringify({ type }) },
+  );
+  return res.data;
+}
+
 // --- Admin actions ---
 
 export async function triggerExtraction(meetingId: string) {

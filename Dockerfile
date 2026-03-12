@@ -19,5 +19,6 @@ COPY --from=backend-builder /app/node_modules ./node_modules
 COPY package*.json ./
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 ENV NODE_ENV=production
+ENV NODE_OPTIONS=--openssl-legacy-provider
 EXPOSE 8080
 CMD ["node", "dist/index.js"]
