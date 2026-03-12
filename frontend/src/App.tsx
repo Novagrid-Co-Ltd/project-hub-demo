@@ -29,7 +29,7 @@ function App() {
           to="/projects"
           className="text-xl font-bold text-white no-underline"
         >
-          PJ Hub
+          PLANNOVA
         </Link>
         <nav className="flex items-center gap-2">
           <NavLink to="/projects">Projects</NavLink>
